@@ -32,3 +32,6 @@ Thumbs.db
 # Logs / temp
 *.log
 .cache/
+
+# Local-only readme (Chinese); GitHub uses English README.md
+README.zh-CN.md

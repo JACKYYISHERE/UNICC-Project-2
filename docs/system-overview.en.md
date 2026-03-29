@@ -175,7 +175,7 @@ The production app maps JSON to UI via `real_frontend/src/utils/mapCouncilReport
 |-----|-------------|
 | This file `system-overview.en.md` | System overview (English) |
 | `system-overview.zh-CN.md` | Same (Chinese) |
-| Root `README_en.md` | Short overview and tree |
+| Root `README.md` | English overview (GitHub default) |
 | `frontend_api/README.md` | How to run API and sample payloads |
 | `mock_frontend/README.md` | Static UI notes |
 

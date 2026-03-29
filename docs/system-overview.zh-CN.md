@@ -114,7 +114,7 @@ API 密钥使用环境变量（如 ANTHROPIC_API_KEY），勿将 .env 提交到 
 
 - 本文 system-overview.zh-CN.md：系统总览（中文）
 - system-overview.en.md：同上（英文）
-- 仓库根 README.md：简要与目录树
+- 仓库根 README.md：英文概览（GitHub 默认展示）
 - frontend_api/README.md：API 启动与示例
 - mock_frontend/README.zh-CN.md：静态前端说明
 
