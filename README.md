@@ -2,137 +2,218 @@
 
 Multi-expert AI safety evaluation for **UN / humanitarian** deployment contexts. Three virtual experts run in parallel, exchange **six directional critiques**, and a **rules-based arbitration layer** produces a structured **`CouncilReport`** (JSON) with a clear recommendation: **APPROVE**, **REVIEW**, or **REJECT**.
 
-**Production stack:** `real_frontend/` (React) + `frontend_api/` (FastAPI, default **:8100**).  
-**Static UI demo (no backend):** `mock_frontend/`.  
-**Documentation:** [docs/system-overview.en.md](docs/system-overview.en.md) and [docs/README.md](docs/README.md).
+**Production stack:** `real_frontend/` (React + Vite) + `frontend_api/` (FastAPI, default **:8100**).  
+**Static UI (no backend):** `mock_frontend/`.  
+**Long-form docs:** [docs/system-overview.en.md](docs/system-overview.en.md) · Chinese: [docs/system-overview.zh-CN.md](docs/system-overview.zh-CN.md).
 
-On GitHub, the canonical readme is this file (English). For Chinese narrative in-repo, see [docs/system-overview.zh-CN.md](docs/system-overview.zh-CN.md). Optionally keep a personal `README.zh-CN.md` in the repo root; it is listed in `.gitignore` so it stays local and is not pushed.
-
----
-
-## Features
-
-| Layer | Role |
-|--------|------|
-| **Expert 1** | Security and adversarial testing: document analysis (Mode A) or full PROBE to BOUNDARY to ATTACK (Mode B) with an adapter. |
-| **Expert 2** | Governance and compliance: EU AI Act, GDPR, NIST, UNESCO, etc., via agentic RAG over ChromaDB. |
-| **Expert 3** | UN mission fit: UN Charter, humanitarian principles, UNESCO ethics, via agentic RAG. |
-| **Council** | Six critiques plus non-LLM arbitration (conservative aggregation, consensus). |
-
-**Model backends:** Anthropic **Claude** (dev/demo) or **vLLM + Llama 3 70B** (`council/slm_*.py`).
+Root `README.zh-CN.md` is optional and **gitignored** for a personal local copy; GitHub shows this English file only.
 
 ---
 
-## Quick start: web UI and full council
+## What runs in one evaluation
 
-```bash
-# Terminal 1 - API
-cd /path/to/Capstone
-pip install -r frontend_api/requirements.txt
-export ANTHROPIC_API_KEY=...
-uvicorn frontend_api.main:app --reload --port 8100
+1. Build an **`AgentSubmission`** from `agent_id`, `system_name`, `system_description`, and optional metadata (`purpose`, `deployment_context`, `data_access`, `risk_indicators`, etc.).
+2. **`CouncilOrchestrator`** runs **Expert 1 / 2 / 3** concurrently (each returns a block under `expert_reports`).
+3. Six **directed critiques** are generated (e.g. governance on security); results live under `critiques`.
+4. **Arbitration** (pure Python rules, no extra LLM call) sets `council_decision` (final recommendation, consensus, oversight flags) and a human-readable `council_note`.
+5. **`persist_report()`** writes the full JSON file, upserts **SQLite**, and appends a row to the **JSONL** knowledge index.
 
-# Terminal 2 - UI
-cd real_frontend && npm install && npm run dev
-```
-
-Open the URL Vite prints (usually `http://localhost:5173`). Use **New Evaluation** to call `POST /evaluate/council`. **Final Report** can export Markdown.
-
-**OpenAPI:** `http://localhost:8100/docs`
+Reference JSON shape: `council/test_output_refugeeassist.json` (example full run).
 
 ---
 
-## Quick start: Expert 1 only
+## Expert roles (detail)
 
-```bash
-pip install -r api/requirements.txt
-uvicorn api.main:app --reload --port 8000
-```
+| Expert | Code entry (typical) | Output keys in `expert_reports` |
+|--------|----------------------|-----------------------------------|
+| **Security** | `Expert1/expert1_module.py`, `expert1_router.py` | `security` — scores, `risk_tier`, `recommendation`, `key_findings`, optional `council_handoff` |
+| **Governance** | `Expert 2/expert2_agent.py` + `Expert 2/chroma_db_expert2/` | `governance` — compliance dimensions, `key_gaps`, citations, `recommendation` |
+| **UN mission fit** | `Expert 3/expert3_agent.py` + `Expert 3/expert3_rag/` | `un_mission_fit` — dimension scores, violations, `recommendation` |
 
-`POST /evaluate/expert1-attack` — see `http://localhost:8000/docs`.
+Expert 1 **Mode A**: description-only analysis. **Mode B**: live **PROBE → BOUNDARY → ATTACK** when an adapter targets a real system (`Expert1/adapters/`).
 
 ---
 
-## Quick start: Python (no HTTP)
+## Core data shapes (integrators)
+
+**Request body (HTTP / internal)** — minimal fields:
+
+- `agent_id` (string, stable id)
+- `system_name` (display)
+- `system_description` (long text; main evaluation input)
+
+**`CouncilReport` (response)** — fields you will render or store:
+
+- `incident_id` — generated id for storage (e.g. `inc_YYYYMMDD_agent_suffix`)
+- `agent_id`, `session_id`, `timestamp`
+- `expert_reports` — dict with `security`, `governance`, `un_mission_fit`
+- `critiques` — six directed critique objects
+- `council_decision` — `final_recommendation`, `consensus_level`, rationale, flags
+- `council_note` — short narrative summary
+
+Dataclass definitions: `council/council_report.py`, submission: `council/agent_submission.py`.
+
+---
+
+## Persistence (what gets written)
+
+| Layer | Location | Purpose |
+|--------|-----------|---------|
+| Full report | `council/reports/{incident_id}.json` | Lossless archive |
+| SQLite | `council/council.db`, table `evaluations` | List/detail APIs, dashboard history |
+| Index | `council/knowledge_index.jsonl` | Per-run `summary_core` + `raw` dict for future embeddings / similarity |
+
+Writer: `council/storage.py` (`persist_report`).
+
+---
+
+## HTTP APIs
+
+### `frontend_api` (recommended, port **8100**)
+
+| Method | Path | Notes |
+|--------|------|--------|
+| GET | `/health` | Liveness |
+| POST | `/evaluate/council` | Full pipeline + persist |
+| POST | `/evaluate/expert1-attack` | Expert 1 only (same suite) |
+| GET | `/evaluations` | `limit`, `offset` query params |
+| GET | `/evaluations/{incident_id}` | Full `CouncilReport` JSON |
+| GET | `/evaluations/{incident_id}/markdown` | Server-generated Markdown |
+| GET | `/knowledge/index` | Recent JSONL records |
+| GET | `/knowledge/search` | Text search over summaries / ids |
+
+Implementation: `frontend_api/main.py`. Runbook: [frontend_api/README.md](frontend_api/README.md). **CORS** is open for local UI dev.
+
+### `api` (Expert 1 only, port **8000**)
+
+- `POST /evaluate/expert1-attack` with `mode` **A** or **B**, `backend` `claude` or `mock`, etc.
+- Entry: `api/main.py`. Dependencies: `api/requirements.txt`.
+
+---
+
+## Production frontend (`real_frontend`)
+
+- **API base URL:** `VITE_API_URL` or default `http://localhost:8100` (`src/api/client.ts`).
+- **Submit full council:** `submitCouncilEvaluation` → `POST /evaluate/council` (`src/pages/NewEvaluation.tsx`).
+- **Map API JSON to UI:** `src/utils/mapCouncilReport.ts` (`councilReportToDetailedEvaluation`).
+- **Upload description:** PDF / JSON / Markdown → text via `src/utils/parseAgentDoc.ts`.
+- **Markdown download:** `src/utils/reportToMarkdown.ts`, **Final Report** page.
+
+**`mock_frontend`:** same visual flow; `NewEvaluation` uses a timer and `src/data/mockData.ts` — **no** HTTP.
+
+---
+
+## Python-only invocation
 
 ```python
 from council.council_orchestrator import evaluate_agent
 
 report = evaluate_agent(
     agent_id="demo-001",
-    system_description="...",
+    system_description="Long natural-language description of the AI system under review.",
     system_name="Demo",
-    backend="claude",
+    backend="claude",  # or "vllm" with slm config
 )
-print(report.incident_id)
+# report.to_json() or fields on report.council_decision
+```
+
+Orchestrator: `council/council_orchestrator.py`. Critique generation: `council/critique.py`. SLM bridge: `council/slm_backends.py`, `council/slm_experts.py`.
+
+---
+
+## Environment and backends
+
+| Variable / setting | Role |
+|--------------------|------|
+| `ANTHROPIC_API_KEY` | Claude for experts / critiques when `backend=claude` |
+| vLLM URL / model | When using `backend=vllm`; see OpenAPI and `slm_backends.py` |
+
+Do **not** commit `.env`. Root `.gitignore` covers `.env*`, `node_modules/`, `__pycache__/`, etc.
+
+---
+
+## Run commands (copy-paste)
+
+**Full stack (UI + council API):**
+
+```bash
+cd /path/to/Capstone
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r frontend_api/requirements.txt
+export ANTHROPIC_API_KEY=sk-ant-...
+uvicorn frontend_api.main:app --reload --port 8100
+```
+
+```bash
+cd real_frontend && npm install && npm run dev
+```
+
+**Expert 1 API only:**
+
+```bash
+pip install -r api/requirements.txt
+uvicorn api.main:app --reload --port 8000
+```
+
+**Static demo:**
+
+```bash
+cd mock_frontend && npm install && npm run dev
 ```
 
 ---
 
-## Repository layout (top level)
+## Key files by subsystem (not exhaustive)
 
-```text
-Capstone/
-├── council/           # Orchestrator, critiques, reports, storage, SLM helpers
-├── Expert1/
-├── Expert 2/          # + chroma_db_expert2/
-├── Expert 3/          # + expert3_rag/
-├── frontend_api/      # FastAPI: council, history, markdown
-├── api/               # FastAPI: Expert 1 only (:8000)
-├── real_frontend/
-├── mock_frontend/
-├── docs/
-├── benchmark_*.py
-├── benchmark_data/
-└── UNICC-Project-2/
+```
+council/
+├── agent_submission.py       # AgentSubmission
+├── council_orchestrator.py   # evaluate_agent, CouncilOrchestrator
+├── council_report.py         # CouncilReport, CouncilDecision, CritiqueResult
+├── critique.py               # six directional critiques
+├── storage.py                # JSON + SQLite + JSONL
+├── slm_backends.py           # vLLM client
+└── slm_experts.py            # Expert 2/3 on SLM
+
+frontend_api/
+├── main.py                   # all :8100 routes
+└── requirements.txt
+
+real_frontend/
+├── src/App.tsx
+├── src/api/client.ts
+├── src/utils/mapCouncilReport.ts
+├── src/utils/parseAgentDoc.ts
+└── src/pages/*.tsx
 ```
 
----
-
-## Persistence
-
-| Artifact | Path |
-|----------|------|
-| Full JSON | `council/reports/{incident_id}.json` |
-| SQLite | `council/council.db` |
-| JSONL index | `council/knowledge_index.jsonl` |
+Large or generated artifacts (e.g. Chroma sqlite under `Expert 2/chroma_db_expert2/`) may be present locally; keep them out of git if you add patterns — current policy is in `.gitignore` at repo root.
 
 ---
 
-## `frontend_api` endpoints (:8100)
+## Benchmarks and secondary trees
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health |
-| POST | `/evaluate/council` | Full pipeline + persist |
-| POST | `/evaluate/expert1-attack` | Expert 1 only |
-| GET | `/evaluations` | History |
-| GET | `/evaluations/{incident_id}` | Report JSON |
-| GET | `/evaluations/{incident_id}/markdown` | Markdown |
-
-More: [frontend_api/README.md](frontend_api/README.md).
+- Root `benchmark_*.py` and `benchmark_data/` support annotation / evaluation workflows (see script docstrings).
+- `UNICC-Project-2/` holds an additional copy of council/experts/training assets and subproject docs; align changes with root `council/` when you maintain both.
 
 ---
 
-## Input (minimal)
+## Troubleshooting
 
-- `agent_id`, `system_name`, `system_description` (long text; PDF/JSON/MD parsing in `real_frontend`).
-
-Optional fields: purpose, deployment context, data access, risk indicators, backend, vLLM settings (see OpenAPI).
-
----
-
-## Security
-
-Use environment variables for keys (e.g. `ANTHROPIC_API_KEY`). Do not commit `.env`. `.gitignore` excludes secrets and `node_modules/`.
+| Symptom | Check |
+|---------|--------|
+| UI cannot load dashboard | `frontend_api` on **8100**, `GET /health`, browser console / CORS |
+| `evaluate/council` hangs | Model latency; watch server logs; ensure API key or vLLM is reachable |
+| Empty expert sections | Mapper expects keys `security` / `governance` / `un_mission_fit`; compare response to `test_output_refugeeassist.json` |
+| Chroma / RAG errors | Expert 2/3 DB paths built under `Expert 2/chroma_db_expert2/`, `Expert 3/expert3_rag/` |
 
 ---
 
-## Current limits
+## Known limitations
 
-- No automatic **GitHub repo to system description** pipeline.  
-- No **PDF** export in the UI (JSON + Markdown).  
-- Vector search over `knowledge_index.jsonl` is future work.
+- No automated **“clone GitHub repo → system_description”** pipeline.
+- No **PDF** export in the web UI (JSON + Markdown available).
+- Vector retrieval over `knowledge_index.jsonl` is not wired into the default UI yet.
 
 ---
 
