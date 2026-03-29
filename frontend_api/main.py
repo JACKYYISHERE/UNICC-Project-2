@@ -157,6 +157,17 @@ class CouncilEvaluateRequest(BaseModel):
     vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct"
 
 
+class RepoAnalyzeRequest(BaseModel):
+    source: str = Field(
+        ...,
+        description="GitHub URL (https://github.com/owner/repo) or absolute local path",
+    )
+    backend: str = Field("claude", description="claude|vllm — LLM used to generate the description")
+    vllm_base_url: str = "http://localhost:8000"
+    vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct"
+    github_token: str = Field("", description="Optional GitHub PAT for private repos")
+
+
 def _run_expert1_attack(req: Expert1AttackRequest) -> dict:
     if str(EXPERT1_DIR) not in sys.path:
         sys.path.insert(0, str(EXPERT1_DIR))
@@ -187,6 +198,26 @@ def _run_expert1_attack(req: Expert1AttackRequest) -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "service": "frontend-api-suite"}
+
+
+@app.post("/analyze/repo")
+def analyze_repo_endpoint(request: RepoAnalyzeRequest) -> dict:
+    """
+    Collect key files from a GitHub URL or local path and call an LLM to
+    generate a structured system description ready for /evaluate/council.
+    """
+    try:
+        from council.repo_analyzer import analyze_repo
+        description = analyze_repo(
+            source=request.source,
+            backend=request.backend,
+            vllm_base_url=request.vllm_base_url,
+            vllm_model=request.vllm_model,
+            github_token=request.github_token or None,
+        )
+        return {"system_description": description, "source": request.source}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/evaluate/expert1-attack")

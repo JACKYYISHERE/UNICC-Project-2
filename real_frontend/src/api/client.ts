@@ -113,6 +113,34 @@ export async function getEvaluationByIncident(incidentId: string): Promise<Counc
   return res.json()
 }
 
+export interface RepoAnalyzeRequest {
+  source: string
+  backend?: 'claude' | 'vllm'
+  vllm_base_url?: string
+  vllm_model?: string
+  github_token?: string
+}
+
+export interface RepoAnalyzeResponse {
+  system_description: string
+  source: string
+}
+
+export async function analyzeRepo(
+  body: RepoAnalyzeRequest
+): Promise<RepoAnalyzeResponse> {
+  const res = await fetch(`${BASE_URL}/analyze/repo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text)
+  }
+  return res.json()
+}
+
 /** 健康检查，用于判断后端是否可用 */
 export async function healthCheck(): Promise<boolean> {
   try {

@@ -1,6 +1,6 @@
 import { type FC, useState, useRef } from 'react'
 import { hapticButton, hapticSelect } from '../utils/haptic'
-import { submitCouncilEvaluation, type CouncilReportResponse } from '../api/client'
+import { submitCouncilEvaluation, analyzeRepo, type CouncilReportResponse } from '../api/client'
 import { parseAgentDoc } from '../utils/parseAgentDoc'
 
 interface Props {
@@ -38,10 +38,13 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
       (import.meta.env.VITE_VLLM_MODEL as string | undefined) ??
       'meta-llama/Meta-Llama-3-70B-Instruct',
   })
-  const [inputMode, setInputMode] = useState<'paste' | 'file'>('paste')
+  const [inputMode, setInputMode] = useState<'paste' | 'file' | 'repo'>('paste')
   const [fileError, setFileError] = useState<string | null>(null)
   const [fileLoading, setFileLoading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [repoSource, setRepoSource] = useState('')
+  const [repoAnalyzing, setRepoAnalyzing] = useState(false)
+  const [repoError, setRepoError] = useState<string | null>(null)
 
   const handleSubmit = async () => {
     setSubmitError(null)
@@ -92,6 +95,27 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
     } finally {
       setFileLoading(false)
       e.target.value = ''
+    }
+  }
+
+  const handleRepoAnalyze = async () => {
+    if (!repoSource.trim()) return
+    setRepoError(null)
+    setRepoAnalyzing(true)
+    hapticButton()
+    try {
+      const result = await analyzeRepo({
+        source: repoSource.trim(),
+        backend: form.llm_backend,
+        vllm_base_url: form.vllm_base_url,
+        vllm_model: form.vllm_model,
+      })
+      setForm(f => ({ ...f, description: result.system_description }))
+      setInputMode('paste')
+    } catch (err) {
+      setRepoError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setRepoAnalyzing(false)
     }
   }
 
@@ -252,14 +276,18 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
           <div className="space-y-5 animate-slide-up">
             <div>
               <p className="section-label">Agent Description Input</p>
-              <div className="flex gap-4 mb-3">
+              <div className="flex gap-4 mb-3 flex-wrap">
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="inputMode" checked={inputMode === 'paste'} onChange={() => { hapticSelect(); setInputMode('paste'); setFileError(null) }} className="text-apple-blue" />
+                  <input type="radio" name="inputMode" checked={inputMode === 'paste'} onChange={() => { hapticSelect(); setInputMode('paste'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
                   <span className="text-sm">Paste text</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="inputMode" checked={inputMode === 'file'} onChange={() => { hapticSelect(); setInputMode('file'); setFileError(null) }} className="text-apple-blue" />
+                  <input type="radio" name="inputMode" checked={inputMode === 'file'} onChange={() => { hapticSelect(); setInputMode('file'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
                   <span className="text-sm">Upload file</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="inputMode" checked={inputMode === 'repo'} onChange={() => { hapticSelect(); setInputMode('repo'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
+                  <span className="text-sm">GitHub / Local repo</span>
                 </label>
                 {inputMode === 'file' && (
                   <>
@@ -271,6 +299,37 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
                 )}
               </div>
               {fileError && <p className="text-xs text-apple-red mb-2">{fileError}</p>}
+              {inputMode === 'repo' && (
+                <div className="mb-4 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      className="input-field font-mono text-xs flex-1"
+                      placeholder="https://github.com/owner/repo  or  /absolute/local/path"
+                      value={repoSource}
+                      onChange={e => setRepoSource(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleRepoAnalyze() }}
+                    />
+                    <button
+                      type="button"
+                      className={`btn-primary text-xs whitespace-nowrap ${repoAnalyzing || !repoSource.trim() ? 'opacity-40 pointer-events-none' : ''}`}
+                      onClick={handleRepoAnalyze}
+                      disabled={repoAnalyzing || !repoSource.trim()}
+                    >
+                      {repoAnalyzing ? 'Analyzing…' : 'Analyze →'}
+                    </button>
+                  </div>
+                  {repoAnalyzing && (
+                    <div className="flex items-center gap-2 text-xs text-apple-gray-500">
+                      <div className="w-3 h-3 border border-apple-blue border-t-transparent rounded-full animate-spin" />
+                      Fetching files and generating description via {form.llm_backend === 'vllm' ? 'vLLM' : 'Claude'}…
+                    </div>
+                  )}
+                  {repoError && <p className="text-xs text-apple-red">{repoError}</p>}
+                  <p className="text-[11px] text-apple-gray-400">
+                    Uses the LLM backend selected in Step 1. After analysis the description will appear below for review.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">System Description *</label>
