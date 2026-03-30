@@ -30,7 +30,7 @@ Reference JSON shape: `council/test_output_refugeeassist.json` (example full run
 | **Governance** | `Expert 2/expert2_agent.py` + `Expert 2/chroma_db_expert2/` | `governance` — compliance dimensions, `key_gaps`, citations, `recommendation` |
 | **UN mission fit** | `Expert 3/expert3_agent.py` + `Expert 3/expert3_rag/` | `un_mission_fit` — dimension scores, violations, `recommendation` |
 
-Expert 1 **Mode A**: description-only analysis. **Mode B**: live **PROBE → BOUNDARY → ATTACK** when an adapter targets a real system (`Expert1/adapters/`).
+Expert 1 **Mode A** (doc analysis): retrieves relevant MITRE ATLAS techniques via RAG, derives dimension scores **deterministically** from a pre-computed lookup table (`Expert1/atlas_dimension_scores.json` — tactic × maturity × attack-layer mapping), then calls LLM only to write rationale. Scores are fully traceable to specific ATLAS technique IDs.  **Mode B**: live **PROBE → BOUNDARY → ATTACK** adversarial testing when an adapter targets a real system (`Expert1/adapters/`).
 
 ---
 
