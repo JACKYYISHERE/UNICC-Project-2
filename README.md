@@ -1,233 +1,298 @@
 # UNICC AI Safety Council
 
-Multi-expert AI safety evaluation for **UN / humanitarian** deployment contexts. Three virtual experts run in parallel, exchange **six directional critiques**, and a **rules-based arbitration layer** produces a structured **`CouncilReport`** (JSON) with a clear recommendation: **APPROVE**, **REVIEW**, or **REJECT**.
-
-**Production stack:** `real_frontend/` (React + Vite) + `frontend_api/` (FastAPI, default **:8100**).  
-**Static UI (no backend):** `mock_frontend/`.  
-**Long-form docs:** [docs/system-overview.en.md](docs/system-overview.en.md) · Chinese: [docs/system-overview.zh-CN.md](docs/system-overview.zh-CN.md).
-
-Root `README.zh-CN.md` is optional and **gitignored** for a personal local copy; GitHub shows this English file only.
+> **Multi-expert AI safety evaluation framework for UN and humanitarian deployment contexts.**  
+> Submit any AI system description → receive a structured APPROVE / REVIEW / REJECT verdict backed by traceable evidence from MITRE ATLAS, EU AI Act, GDPR, NIST AI RMF, and UN mission alignment principles.
 
 ---
 
-## What runs in one evaluation
+## The Problem
 
-1. Build an **`AgentSubmission`** from `agent_id`, `system_name`, `system_description`, and optional metadata (`purpose`, `deployment_context`, `data_access`, `risk_indicators`, etc.).
-2. **`CouncilOrchestrator`** runs **Expert 1 / 2 / 3** concurrently (each returns a block under `expert_reports`).
-3. Six **directed critiques** are generated (e.g. governance on security); results live under `critiques`.
-4. **Arbitration** (pure Python rules, no extra LLM call) sets `council_decision` (final recommendation, consensus, oversight flags) and a human-readable `council_note`.
-5. **`persist_report()`** writes the full JSON file, upserts **SQLite**, and appends a row to the **JSONL** knowledge index.
+Deploying AI systems in humanitarian and UN contexts carries unique risks: biased decisions affecting vulnerable populations, regulatory exposure across multiple jurisdictions (EU AI Act, GDPR, UN Human Rights guidance), adversarial threats specific to high-stakes operational environments, and no standardised pre-deployment vetting process.
 
-Reference JSON shape: `council/test_output_refugeeassist.json` (example full run).
+Existing AI safety tools either focus on a single dimension (security *or* compliance *or* ethics) or produce generic outputs with no traceable evidence. There is no purpose-built council that can simultaneously assess all three perspectives and arbitrate between them.
 
 ---
 
-## Expert roles (detail)
+## What This System Does
 
-| Expert | Code entry (typical) | Output keys in `expert_reports` |
-|--------|----------------------|-----------------------------------|
-| **Security** | `Expert1/expert1_module.py`, `expert1_router.py` | `security` — scores, `risk_tier`, `recommendation`, `key_findings`, optional `council_handoff` |
-| **Governance** | `Expert 2/expert2_agent.py` + `Expert 2/chroma_db_expert2/` | `governance` — compliance dimensions, `key_gaps`, citations, `recommendation` |
-| **UN mission fit** | `Expert 3/expert3_agent.py` + `Expert 3/expert3_rag/` | `un_mission_fit` — dimension scores, violations, `recommendation` |
+The UNICC AI Safety Council runs **three specialised expert agents in parallel**, each grounded in its own knowledge base, then generates **six directed cross-critiques** between them. A **pure Python rules-based arbitration layer** (no additional LLM call) synthesises a final `CouncilReport` with:
 
-Expert 1 **Mode A** (doc analysis): retrieves relevant MITRE ATLAS techniques via RAG, derives dimension scores **deterministically** from a pre-computed lookup table (`Expert1/atlas_dimension_scores.json` — tactic × maturity × attack-layer mapping), then calls LLM only to write rationale. Scores are fully traceable to specific ATLAS technique IDs.  **Mode B**: live **PROBE → BOUNDARY → ATTACK** adversarial testing when an adapter targets a real system (`Expert1/adapters/`).
-
----
-
-## Core data shapes (integrators)
-
-**Request body (HTTP / internal)** — minimal fields:
-
-- `agent_id` (string, stable id)
-- `system_name` (display)
-- `system_description` (long text; main evaluation input)
-
-**`CouncilReport` (response)** — fields you will render or store:
-
-- `incident_id` — generated id for storage (e.g. `inc_YYYYMMDD_agent_suffix`)
-- `agent_id`, `session_id`, `timestamp`
-- `expert_reports` — dict with `security`, `governance`, `un_mission_fit`
-- `critiques` — six directed critique objects
-- `council_decision` — `final_recommendation`, `consensus_level`, rationale, flags
-- `council_note` — short narrative summary
-
-Dataclass definitions: `council/council_report.py`, submission: `council/agent_submission.py`.
+- A clear three-way verdict: **APPROVE · REVIEW · REJECT**
+- Per-expert dimension scores with traceable citations
+- Structured audit findings (Risk → Evidence → Impact → Score Rationale)
+- Consensus level and mandatory human-oversight flags
 
 ---
 
-## Persistence (what gets written)
+## System Architecture
 
-| Layer | Location | Purpose |
-|--------|-----------|---------|
-| Full report | `council/reports/{incident_id}.json` | Lossless archive |
-| SQLite | `council/council.db`, table `evaluations` | List/detail APIs, dashboard history |
-| Index | `council/knowledge_index.jsonl` | Per-run `summary_core` + `raw` dict for future embeddings / similarity |
-
-Writer: `council/storage.py` (`persist_report`).
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        Submission Layer                          │
+│  GitHub URL / PDF / Markdown / JSON  →  system_description      │
+│                  POST /analyze/repo  →  /evaluate/council        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │  AgentSubmission
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    CouncilOrchestrator                           │
+│        (council/council_orchestrator.py)  — Round 1             │
+│                                                                  │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
+│  │   Expert 1       │  │   Expert 2        │  │   Expert 3    │  │
+│  │   Security &     │  │   Governance &    │  │   UN Mission  │  │
+│  │   Adversarial    │  │   Regulatory      │  │   Fit &       │  │
+│  │   Robustness     │  │   Compliance      │  │   Human Rights│  │
+│  │                  │  │                   │  │               │  │
+│  │ MITRE ATLAS RAG  │  │  ChromaDB RAG     │  │  Custom RAG   │  │
+│  │ atlas_dimension  │  │  EU AI Act        │  │  UN mandate   │  │
+│  │ _scores.json     │  │  GDPR, NIST,      │  │  UNGP, UNESCO │  │
+│  │ (deterministic)  │  │  OWASP, UNESCO    │  │               │  │
+│  └────────┬─────────┘  └────────┬──────────┘  └───────┬───────┘  │
+│           │                     │                      │          │
+│           └─────────────────────┴──────────────────────┘          │
+│                                 │  expert_reports                  │
+│                            Round 2: 6 directed cross-critiques     │
+│        (gov→sec, sec→gov, mission→sec, sec→mission,               │
+│         mission→gov, gov→mission)                                  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│              Rules-Based Arbitration  (no LLM)                   │
+│   final_recommendation · consensus_level · oversight_flags       │
+│                       council_note                               │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Persistence Layer                           │
+│  council/reports/{incident_id}.json  (full archive)             │
+│  council/council.db  (SQLite — dashboard / API)                 │
+│  council/knowledge_index.jsonl  (per-run summary + embeddings)  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## HTTP APIs
+## Key Features
 
-### `frontend_api` (recommended, port **8100**)
+### Expert 1 — Security & Adversarial Robustness
 
-| Method | Path | Notes |
-|--------|------|--------|
-| GET | `/health` | Liveness |
-| POST | `/evaluate/council` | Full pipeline + persist |
-| POST | `/evaluate/expert1-attack` | Expert 1 only (same suite) |
-| GET | `/evaluations` | `limit`, `offset` query params |
-| GET | `/evaluations/{incident_id}` | Full `CouncilReport` JSON |
-| GET | `/evaluations/{incident_id}/markdown` | Server-generated Markdown |
-| GET | `/knowledge/index` | Recent JSONL records |
-| GET | `/knowledge/search` | Text search over summaries / ids |
+- **RAG-grounded, deterministic scoring**: retrieves relevant MITRE ATLAS techniques from ChromaDB, maps them to 7 dimensions via a pre-computed lookup table (`Expert1/atlas_dimension_scores.json` — tactic × maturity × attack-layer). Scores are fully traceable to ATLAS technique IDs; the LLM is invoked **only** to write rationale.
+- **Structured audit findings** per finding:
+  - **Risk** — specific threat to this system
+  - **Evidence** — ATLAS ID + named architectural weakness
+  - **Impact** — what an attacker could achieve concretely
+  - **Score Rationale** — why this dimension received this score
+- **Mode B** (optional): live PROBE → BOUNDARY → ATTACK adversarial test suite against a running target system via pluggable adapters.
 
-Implementation: `frontend_api/main.py`. Runbook: [frontend_api/README.md](frontend_api/README.md). **CORS** is open for local UI dev.
+### Expert 2 — Governance & Regulatory Compliance
 
-### `api` (Expert 1 only, port **8000**)
+- Agentic multi-round RAG over a regulatory corpus (EU AI Act, GDPR, NIST AI RMF, OWASP LLM Top 10, UNESCO, UN Human Rights).
+- Rates 9 compliance dimensions: PASS / FAIL / UNCLEAR — never guesses; UNCLEAR ≠ PASS.
+- Findings use audit-standard language: *"No evidence of X has been identified"* (not absolute assertions).
+- EU AI Act high-risk articles (Art. 9/13/17/31) carry automatic *"(if classified as high-risk)"* qualifiers to prevent over-claiming.
+- Every gap ends with **Impact:** explaining the deployment consequence.
+- NIST findings → *alignment gap*; OWASP findings → *exposure / vulnerability*.
 
-- `POST /evaluate/expert1-attack` with `mode` **A** or **B**, `backend` `claude` or `mock`, etc.
-- Entry: `api/main.py`. Dependencies: `api/requirements.txt`.
+### Expert 3 — UN Mission Fit & Human Rights
+
+- RAG over UN mandate documents, UNGP principles, and mission-specific guidance.
+- Scores technical risk, ethical risk, legal risk, and societal risk.
+- Flags humanitarian-context violations (conflict zones, refugee data, vulnerable populations).
+
+### Cross-Expert Critique Round
+
+Six directed critiques surface blind spots across expert domains. Each critique includes: `agrees`, `divergence_type`, `key_point`, `stance`, and `evidence_references`.
+
+### Rules-Based Arbitration
+
+Pure Python — no additional LLM call. Produces:
+
+| Field | Values |
+|-------|--------|
+| `final_recommendation` | APPROVE · REVIEW · REJECT |
+| `consensus_level` | FULL · PARTIAL · SPLIT |
+| `human_oversight_required` | bool |
+| `compliance_blocks_deployment` | bool |
 
 ---
 
-## Production frontend (`real_frontend`)
+## Pain Points Solved
 
-- **API base URL:** `VITE_API_URL` or default `http://localhost:8100` (`src/api/client.ts`).
-- **Submit full council:** `submitCouncilEvaluation` → `POST /evaluate/council` (`src/pages/NewEvaluation.tsx`).
-- **Map API JSON to UI:** `src/utils/mapCouncilReport.ts` (`councilReportToDetailedEvaluation`).
-- **Upload description:** PDF / JSON / Markdown → text via `src/utils/parseAgentDoc.ts`.
-- **Markdown download:** `src/utils/reportToMarkdown.ts`, **Final Report** page.
-
-**`mock_frontend`:** same visual flow; `NewEvaluation` uses a timer and `src/data/mockData.ts` — **no** HTTP.
+| Problem | How we address it |
+|---------|-------------------|
+| Single-dimension tools miss cross-cutting risks | Three independent experts covering security, law, and ethics simultaneously |
+| "Black box" AI safety scores — no evidence trail | Every score traced to ATLAS technique ID, regulation article, or UN principle |
+| LLM hallucination in compliance findings | Expert 2 retrieves article text before making any claim; never cites what it didn't retrieve |
+| Generic findings not specific to the system under review | Expert 1 binds each finding to a concrete architectural weakness in the submitted description |
+| Inconsistent pre-deployment standards across teams | Standardised `CouncilReport` schema with incident IDs, SQLite history, and JSONL index |
+| No structured inter-expert disagreement process | Six directed critiques + arbitration consensus score model |
 
 ---
 
-## Python-only invocation
+## Quick Start
+
+### Requirements
+
+- Python 3.10+
+- Node.js 18+
+- One of: `ANTHROPIC_API_KEY` (Claude) **or** a running vLLM server
+
+### Run
+
+```bash
+# 1. Clone and install
+git clone https://github.com/JACKYYISHERE/UNICC-Project-2.git
+cd UNICC-Project-2
+pip install -r requirements.txt
+
+# 2. Set API key (skip if using vLLM)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# 3. Start backend
+bash start.sh          # → http://localhost:8100
+
+# 4. Start frontend (separate terminal)
+cd real_frontend && npm install && npm run dev   # → http://localhost:5173
+```
+
+### Evaluate a GitHub repo from the command line
+
+```bash
+python3 run_batch_eval.py --backend claude
+```
+
+### Python API
 
 ```python
 from council.council_orchestrator import evaluate_agent
 
 report = evaluate_agent(
     agent_id="demo-001",
-    system_description="Long natural-language description of the AI system under review.",
     system_name="Demo",
-    backend="claude",  # or "vllm" with slm config
+    system_description="<long description of the AI system>",
+    backend="claude",   # or "vllm"
 )
-# report.to_json() or fields on report.council_decision
-```
-
-Orchestrator: `council/council_orchestrator.py`. Critique generation: `council/critique.py`. SLM bridge: `council/slm_backends.py`, `council/slm_experts.py`.
-
----
-
-## Environment and backends
-
-### Backend server (`frontend_api` / `council`)
-
-| Variable | Role |
-|----------|------|
-| `ANTHROPIC_API_KEY` | Claude API key; required when `backend=claude` |
-| — | When using `backend=vllm`, pass `vllm_base_url` and `vllm_model` in the request body (or set defaults in `council_orchestrator`) |
-
-### Frontend (`real_frontend`) — copy `real_frontend/.env.example` to `real_frontend/.env.local`
-
-| Variable | Default | Role |
-|----------|---------|------|
-| `VITE_API_URL` | `http://localhost:8100` | `frontend_api` base URL |
-| `VITE_COUNCIL_BACKEND` | `claude` | Pre-select backend in the UI (`claude` or `vllm`) |
-| `VITE_VLLM_BASE_URL` | `http://127.0.0.1:8000` | vLLM inference server URL (UI default when vllm selected) |
-| `VITE_VLLM_MODEL` | `meta-llama/Meta-Llama-3-70B-Instruct` | Model name passed to vLLM |
-
-Do **not** commit `.env` / `.env.local`. Root `.gitignore` covers `.env*`, `node_modules/`, `__pycache__/`, etc. The `.env.example` files are intentionally tracked.
-
----
-
-## Run commands (copy-paste)
-
-**Full stack (UI + council API):**
-
-```bash
-cd /path/to/Capstone
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r frontend_api/requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
-uvicorn frontend_api.main:app --reload --port 8100
-```
-
-```bash
-cd real_frontend && npm install && npm run dev
-```
-
-**Expert 1 API only:**
-
-```bash
-pip install -r api/requirements.txt
-uvicorn api.main:app --reload --port 8000
-```
-
-**Static demo:**
-
-```bash
-cd mock_frontend && npm install && npm run dev
+print(report.council_decision.final_recommendation)  # APPROVE / REVIEW / REJECT
 ```
 
 ---
 
-## Key files by subsystem (not exhaustive)
+## HTTP API Reference
+
+Base URL: `http://localhost:8100`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Liveness check |
+| POST | `/analyze/repo` | Extract system description from a GitHub URL |
+| POST | `/evaluate/council` | Full three-expert evaluation + persist |
+| GET | `/evaluations` | List past evaluations (`limit`, `offset`) |
+| GET | `/evaluations/{incident_id}` | Full `CouncilReport` JSON |
+| GET | `/evaluations/{incident_id}/markdown` | Report as Markdown download |
+| GET | `/audit/recent` | Live pipeline events (used by frontend log panel) |
+| GET | `/knowledge/stats` | RAG knowledge base document counts |
+
+---
+
+## CouncilReport Shape
+
+```jsonc
+{
+  "incident_id": "inc_20260330_system-name_a1b2c3",
+  "agent_id": "system-name",
+  "timestamp": "2026-03-30T...",
+  "expert_reports": {
+    "security":      { "dimension_scores": {...}, "key_findings": [...], "recommendation": "REVIEW" },
+    "governance":    { "compliance_findings": {...}, "key_gaps": [...], "recommendation": "REJECT" },
+    "un_mission_fit":{ "dimension_scores": {...}, "key_findings": [...], "recommendation": "REVIEW" }
+  },
+  "critiques": { "gov_on_sec": {...}, "sec_on_gov": {...}, ... },  // 6 entries
+  "council_decision": {
+    "final_recommendation": "REVIEW",
+    "consensus_level": "PARTIAL",
+    "human_oversight_required": true,
+    "compliance_blocks_deployment": false
+  },
+  "council_note": "..."
+}
+```
+
+---
+
+## Repository Structure
 
 ```
-council/
-├── agent_submission.py       # AgentSubmission
-├── council_orchestrator.py   # evaluate_agent, CouncilOrchestrator
-├── council_report.py         # CouncilReport, CouncilDecision, CritiqueResult
-├── critique.py               # six directional critiques
-├── storage.py                # JSON + SQLite + JSONL
-├── slm_backends.py           # vLLM client
-└── slm_experts.py            # Expert 2/3 on SLM
-
-frontend_api/
-├── main.py                   # all :8100 routes
-└── requirements.txt
-
-real_frontend/
-├── src/App.tsx
-├── src/api/client.ts
-├── src/utils/mapCouncilReport.ts
-├── src/utils/parseAgentDoc.ts
-└── src/pages/*.tsx
+Capstone/
+├── council/                     # Core orchestration
+│   ├── council_orchestrator.py  # evaluate_agent(), CouncilOrchestrator
+│   ├── council_report.py        # CouncilReport dataclasses
+│   ├── critique.py              # 6-critique generation
+│   ├── storage.py               # JSON + SQLite + JSONL persistence
+│   └── reports/                 # Per-run JSON archives
+│
+├── Expert1/                     # Security expert
+│   ├── expert1_router.py        # Mode A (RAG) + Mode B (attack)
+│   ├── atlas_dimension_scores.json  # Pre-computed ATLAS → dimension scores
+│   └── rag/                     # ChromaDB for ATLAS techniques
+│
+├── Expert 2/                    # Governance expert
+│   ├── expert2_agent.py         # Agentic RAG compliance assessor
+│   └── chroma_db_expert2/       # Regulatory corpus (EU AI Act, GDPR, …)
+│
+├── Expert 3/                    # UN Mission Fit expert
+│   ├── expert3_agent.py
+│   └── expert3_rag/             # UN mandate / UNGP corpus
+│
+├── frontend_api/                # FastAPI backend (:8100)
+│   └── main.py
+│
+├── real_frontend/               # React + Vite UI (:5173)
+│   └── src/
+│       ├── pages/               # Dashboard, NewEvaluation, ExpertAnalysis, …
+│       ├── api/client.ts
+│       └── utils/mapCouncilReport.ts
+│
+├── run_batch_eval.py            # CLI: evaluate multiple GitHub repos
+├── dgx_setup.sh                 # GPU server deployment helper
+├── start.sh                     # Simple backend entry point
+└── docs/
+    ├── system-overview.en.md
+    └── system-overview.zh-CN.md
 ```
 
-Large or generated artifacts (e.g. Chroma sqlite under `Expert 2/chroma_db_expert2/`) may be present locally; keep them out of git if you add patterns — current policy is in `.gitignore` at repo root.
+---
+
+## Environment Variables
+
+### Backend
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `ANTHROPIC_API_KEY` | If using Claude | Falls back automatically if vLLM unreachable |
+
+### Frontend (`real_frontend/.env.local`)
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `VITE_API_URL` | `http://localhost:8100` | Backend base URL |
+| `VITE_COUNCIL_BACKEND` | `claude` | `claude` or `vllm` |
+| `VITE_VLLM_BASE_URL` | `http://127.0.0.1:8000` | vLLM server when backend=vllm |
+| `VITE_VLLM_MODEL` | `meta-llama/Meta-Llama-3-70B-Instruct` | Model name |
+
+Copy `real_frontend/.env.example` → `real_frontend/.env.local` to get started.
 
 ---
 
-## Benchmarks and secondary trees
+## Docs
 
-- Root `benchmark_*.py` and `benchmark_data/` support annotation / evaluation workflows (see script docstrings).
-- `UNICC-Project-2/` holds an additional copy of council/experts/training assets and subproject docs; align changes with root `council/` when you maintain both.
-
----
-
-## Troubleshooting
-
-| Symptom | Check |
-|---------|--------|
-| UI cannot load dashboard | `frontend_api` on **8100**, `GET /health`, browser console / CORS |
-| `evaluate/council` hangs | Model latency; watch server logs; ensure API key or vLLM is reachable |
-| Empty expert sections | Mapper expects keys `security` / `governance` / `un_mission_fit`; compare response to `test_output_refugeeassist.json` |
-| Chroma / RAG errors | Expert 2/3 DB paths built under `Expert 2/chroma_db_expert2/`, `Expert 3/expert3_rag/` |
-
----
-
-## Known limitations
-
-- No automated **“clone GitHub repo → system_description”** pipeline.
-- No **PDF** export in the web UI (JSON + Markdown available).
-- Vector retrieval over `knowledge_index.jsonl` is not wired into the default UI yet.
+- [System Overview (English)](docs/system-overview.en.md)
+- [系统概览（中文）](docs/system-overview.zh-CN.md)
 
 ---
 
 ## License
 
-See [UNICC-Project-2/LICENSE](UNICC-Project-2/LICENSE) (MIT) unless another license applies in a subtree.
+MIT — see [UNICC-Project-2/LICENSE](UNICC-Project-2/LICENSE).
