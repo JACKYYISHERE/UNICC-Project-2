@@ -18,20 +18,32 @@ interface Props {
   onStep: (step: ReportStep) => void
   /** 来自后端的 Expert 1 报告（可选） */
   expert1Report?: Record<string, any>
+  onViewFull?: () => void
 }
 
 const recMap = (r: string) => (r === 'PASS' || r === 'APPROVE' ? 'APPROVE' : r === 'FAIL' || r === 'REJECT' ? 'REJECT' : 'REVIEW')
 
-const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Report }) => {
+const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Report, onViewFull }) => {
   const date = new Date(ev.submitted_at).toLocaleDateString('en-US', {
     year: 'numeric', month: 'short', day: 'numeric',
   })
 
   return (
     <div className="p-8 space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-apple-gray-900 mb-1">Report</h1>
-        <p className="text-sm text-apple-gray-400">{ev.system_name} · {ev.category}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-apple-gray-900 mb-1">Report</h1>
+          <p className="text-sm text-apple-gray-400">{ev.system_name} · {ev.category}</p>
+        </div>
+        {onViewFull && (
+          <button
+            onClick={() => { hapticButton(); onViewFull() }}
+            className="flex items-center gap-2 px-4 py-2 rounded-apple-lg bg-apple-blue text-white text-xs font-semibold hover:opacity-90 transition-opacity shadow-sm"
+          >
+            <span>🗂</span>
+            View Full Report
+          </button>
+        )}
       </div>
 
       {/* Expert 1 主动攻击 API 结果（仅当本次从「新建评估」提交后有返回时显示） */}

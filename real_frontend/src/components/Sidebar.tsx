@@ -2,7 +2,7 @@ import { type FC } from 'react'
 import { hapticSelect } from '../utils/haptic'
 import type { ReportStep } from '../pages/Report'
 
-type Page = 'dashboard' | 'evaluate' | 'report'
+type Page = 'dashboard' | 'evaluate' | 'report' | 'fullreport'
 
 const REPORT_STEPS: { id: ReportStep; label: string }[] = [
   { id: 'overview', label: 'Overview' },
