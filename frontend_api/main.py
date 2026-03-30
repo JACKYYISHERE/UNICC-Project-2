@@ -31,6 +31,36 @@ INDEX_PATH = COUNCIL_DIR / "knowledge_index.jsonl"
 EXPERT1_DIR = BASE_DIR / "Expert1"
 
 
+def _resolve_backend(requested: str, vllm_base_url: str = "http://localhost:8000") -> str:
+    """
+    If the requested backend is 'vllm' but the server is unreachable,
+    fall back to 'claude' automatically (only when ANTHROPIC_API_KEY is set).
+    Logs a warning but never raises.
+    """
+    import os
+    if requested != "vllm":
+        return requested
+    import urllib.request, urllib.error
+    try:
+        urllib.request.urlopen(f"{vllm_base_url.rstrip('/')}/health", timeout=3)
+        return "vllm"
+    except Exception:
+        pass
+    # vLLM unreachable — fall back to Claude if key is present
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        print(f"[backend] vLLM unreachable at {vllm_base_url} — falling back to Claude")
+        return "claude"
+    # Neither available
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            f"vLLM endpoint unreachable at {vllm_base_url}: Connection refused\n"
+            "Either start vLLM (`vllm serve <model> --port 8000`) "
+            "or set ANTHROPIC_API_KEY on the server for Claude fallback."
+        ),
+    )
+
+
 def _ensure_serializable(obj: Any) -> Any:
     if is_dataclass(obj) and not isinstance(obj, type):
         return _ensure_serializable(asdict(obj))
@@ -456,8 +486,9 @@ def analyze_repo_endpoint(request: RepoAnalyzeRequest) -> dict:
     Returns: system_description, capabilities, data_sources, human_oversight,
              category, deploy_zone, source.
     """
+    effective_backend = _resolve_backend(request.backend, request.vllm_base_url)
     kwargs = dict(
-        backend=request.backend,
+        backend=effective_backend,
         vllm_base_url=request.vllm_base_url,
         vllm_model=request.vllm_model,
     )
@@ -553,6 +584,7 @@ def evaluate_council(request: CouncilEvaluateRequest) -> dict:
         session_id=session_id,
         agent_id=request.agent_id,
     )
+    effective_backend = _resolve_backend(request.backend, request.vllm_base_url)
     try:
         from council.agent_submission import AgentSubmission
         from council.council_orchestrator import CouncilOrchestrator
@@ -569,7 +601,7 @@ def evaluate_council(request: CouncilEvaluateRequest) -> dict:
             },
         )
         orch = CouncilOrchestrator(
-            backend=request.backend,
+            backend=effective_backend,
             vllm_base_url=request.vllm_base_url,
             vllm_model=request.vllm_model,
         )
