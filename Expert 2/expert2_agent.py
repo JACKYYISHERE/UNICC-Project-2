@@ -516,6 +516,11 @@ class Expert2Agent:
 
             # Exit loop if assessment is done
             if assessment_done:
+                # Convert structured gap objects → [RISK]/[EVIDENCE]/[IMPACT]/[SCORE] strings
+                final_assessment["key_gaps"] = _format_gaps(
+                    final_assessment.get("key_gaps",
+                        final_assessment.get("compliance_gaps", []))
+                )
                 return final_assessment
 
         raise ValueError(f"Exceeded max search rounds ({MAX_SEARCH_ROUNDS}) without produce_assessment.")
