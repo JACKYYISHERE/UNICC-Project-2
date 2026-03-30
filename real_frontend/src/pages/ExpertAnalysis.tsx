@@ -7,7 +7,8 @@ import { getEvaluationAudit, type AuditEvent, type AuditSpan } from '../api/clie
 // ── Score bar row ─────────────────────────────────────────────────────────────
 const ScoreRow: FC<{ label: string; value: number; max: number }> = ({ label, value, max }) => {
   const pct = (value / max) * 100
-  const color = pct >= 80 ? 'bg-apple-green' : pct >= 50 ? 'bg-apple-blue' : pct >= 30 ? 'bg-apple-orange' : 'bg-apple-red'
+  // 1=low risk (green/short) → 5=critical risk (red/full) — inverted from typical progress bars
+  const color = pct <= 20 ? 'bg-apple-green' : pct <= 40 ? 'bg-apple-orange' : pct <= 60 ? 'bg-apple-orange' : 'bg-apple-red'
   return (
     <div>
       <div className="flex justify-between mb-1.5">
@@ -260,13 +261,66 @@ const ExpertAnalysis: FC<Props> = ({ evaluation }) => {
           <div className="space-y-6">
             <div>
               <p className="section-label">Key Findings</p>
-              <ul className="space-y-2.5">
-                {active.findings.map((f, i) => (
-                  <li key={i} className="flex gap-2.5">
-                    <span className="w-4 h-4 rounded-full bg-apple-red-bg text-apple-red text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">!</span>
-                    <p className="text-xs text-apple-gray-700 leading-relaxed">{f}</p>
-                  </li>
-                ))}
+              <ul className="space-y-3">
+                {active.findings.map((f, i) => {
+                  const isAudit = f.includes('[RISK]') && f.includes('[EVIDENCE]');
+                  if (isAudit) {
+                    const extract = (tag: string, next: string) => {
+                      const re = new RegExp(`\\[${tag}\\]\\s*(.*?)(?=\\[${next}\\]|$)`, 's');
+                      return f.match(re)?.[1]?.trim() ?? '';
+                    };
+                    const risk  = extract('RISK', 'EVIDENCE');
+                    const evid  = extract('EVIDENCE', 'IMPACT');
+                    const imp   = extract('IMPACT', 'SCORE');
+                    const score = extract('SCORE', '$');
+                    return (
+                      <li key={i} className="rounded-apple border border-apple-gray-100 bg-apple-gray-50 p-3 space-y-1.5">
+                        <div className="flex gap-1.5 items-start">
+                          <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-apple-red-bg text-apple-red uppercase tracking-wide mt-0.5">Risk</span>
+                          <p className="text-xs text-apple-gray-800 font-medium leading-snug">{risk}</p>
+                        </div>
+                        <div className="flex gap-1.5 items-start">
+                          <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-wide mt-0.5">Evidence</span>
+                          <p className="text-xs text-apple-gray-600 leading-snug">{evid}</p>
+                        </div>
+                        <div className="flex gap-1.5 items-start">
+                          <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 uppercase tracking-wide mt-0.5">Impact</span>
+                          <p className="text-xs text-apple-gray-600 leading-snug">{imp}</p>
+                        </div>
+                        {score && (
+                          <div className="flex gap-1.5 items-start">
+                            <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 uppercase tracking-wide mt-0.5">Score</span>
+                            <p className="text-xs text-apple-gray-500 leading-snug italic">{score}</p>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  }
+                  const hasImpact = f.includes('Impact:');
+                  if (hasImpact) {
+                    const impactIdx = f.indexOf('Impact:');
+                    const body = f.slice(0, impactIdx).trim();
+                    const impact = f.slice(impactIdx + 7).trim();
+                    return (
+                      <li key={i} className="rounded-apple border border-apple-gray-100 bg-apple-gray-50 p-3 space-y-1.5">
+                        <div className="flex gap-1.5 items-start">
+                          <span className="w-4 h-4 rounded-full bg-apple-red-bg text-apple-red text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">!</span>
+                          <p className="text-xs text-apple-gray-700 leading-snug">{body}</p>
+                        </div>
+                        <div className="flex gap-1.5 items-start ml-6">
+                          <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 uppercase tracking-wide mt-0.5">Impact</span>
+                          <p className="text-xs text-apple-gray-600 leading-snug italic">{impact}</p>
+                        </div>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={i} className="flex gap-2.5">
+                      <span className="w-4 h-4 rounded-full bg-apple-red-bg text-apple-red text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">!</span>
+                      <p className="text-xs text-apple-gray-700 leading-relaxed">{f}</p>
+                    </li>
+                  );
+                })}
               </ul>
             </div>
             <div>

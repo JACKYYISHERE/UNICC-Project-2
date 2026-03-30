@@ -18,26 +18,39 @@ const toConsensus = (v: unknown): Consensus => {
 const titleCase = (k: string) =>
   k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
+// PASS=1 (green), UNCLEAR=3 (amber), FAIL=5 (red) — aligns with Expert 1's 1=low risk scale
+const complianceToScore: Record<string, number> = { PASS: 1, UNCLEAR: 3, FAIL: 5 }
+
 const scoreEntries = (r: any): { label: string; value: number; max: number }[] => {
+  // Expert 1 / Expert 3: numeric dimension_scores
   const ds = r?.dimension_scores
-  if (ds && typeof ds === 'object') {
+  if (ds && typeof ds === 'object' && Object.values(ds).some(v => typeof v === 'number')) {
     return Object.entries(ds).slice(0, 8).map(([k, v]) => ({
       label: titleCase(k),
       value: Number(v) || 0,
       max: 5,
     }))
   }
+  // Expert 2: compliance_findings with PASS/FAIL/UNCLEAR strings
+  const cf = r?.compliance_findings
+  if (cf && typeof cf === 'object' && Object.keys(cf).length > 0) {
+    return Object.entries(cf).map(([k, v]) => ({
+      label: titleCase(k),
+      value: complianceToScore[String(v).toUpperCase()] ?? 3,
+      max: 5,
+    }))
+  }
+  // Fallback: council_handoff numeric scores
   const h = r?.council_handoff
   if (h && typeof h === 'object') {
-    return ['privacy_score', 'transparency_score', 'bias_score'].map((k) => ({
-      label: titleCase(k),
+    const keys = ['privacy_score', 'transparency_score', 'bias_score'].filter(k => h[k] != null)
+    if (keys.length) return keys.map(k => ({
+      label: titleCase(k.replace('_score', '')),
       value: Number(h[k]) || 0,
       max: 5,
     }))
   }
-  return [
-    { label: 'Overall', value: 3, max: 5 },
-  ]
+  return [{ label: 'Overall', value: 3, max: 5 }]
 }
 
 const extractFindings = (r: any): string[] => {

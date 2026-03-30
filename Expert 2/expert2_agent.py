@@ -65,7 +65,24 @@ OUTPUT REQUIREMENTS:
   - PASS: Evidence supports compliance
   - FAIL: Clear gap identified against a specific article
   - UNCLEAR: Insufficient documentation to determine — do NOT guess
-- key_gaps: Each gap MUST cite the specific article (e.g. "EU AI Act Article 13: No transparency documentation")
+- key_gaps: Each gap must follow this exact audit format:
+    "[Framework] [Article/Section] gap[(if classified as high-risk)]:
+     [Potential gap / No evidence of / Not demonstrated]: [specific missing element].
+     Impact: [what governance failure, data risk, or deployment consequence results]"
+
+  Language rules:
+  - NEVER write "No documented X" (absolute assertion — you cannot confirm absence)
+  - ALWAYS write "No evidence of X has been identified" or "Potential gap: X not demonstrated"
+  - EU AI Act Articles 9/13/17/31 MUST include "(if classified as high-risk)" qualifier
+  - NIST AI RMF findings → use "alignment gap" (not "violation")
+  - OWASP findings → use "exposure" or "vulnerability" (not "violation" or "failure")
+  - Every gap MUST end with "Impact: ..." explaining the governance/deployment consequence
+
+  Example format:
+  "Potential EU AI Act Article 9 gap (if classified as high-risk): No evidence of a
+   documented risk management system has been identified. Impact: May result in
+   unquantified model risk and unreliable safety evaluations."
+
 - regulatory_citations: List every article you actually retrieved and used
 - council_handoff scores (1-5): Align with Expert 1's dimension scale
   - privacy_score:       1=low GDPR risk, 5=critical PII/consent failure
@@ -78,6 +95,7 @@ CRITICAL RULES:
 - UNCLEAR ≠ PASS — if documentation is missing, mark UNCLEAR
 - You may use up to 3 searches
 - You MUST call produce_assessment to finish — this is mandatory
+- Do NOT make absolute assertions ("no X exists") — only audit observations ("no evidence of X identified")
 """
 
 # --- TOOLS DEFINITION -------------------------------------------------------
@@ -177,7 +195,15 @@ TOOLS = [
                 # ── 具体缺口（带条款引用）─────────────────────────────────
                 "key_gaps": {
                     "type": "array",
-                    "description": "Each gap MUST cite the specific article: 'EU AI Act Article 13: No transparency documentation'",
+                    "description": (
+                        "Audit-quality compliance gaps. Each string must follow the format: "
+                        "'[Framework] [Article] gap[(if classified as high-risk)]: "
+                        "No evidence of [X] has been identified / Potential gap: [X] not demonstrated. "
+                        "Impact: [governance/deployment consequence].' "
+                        "NEVER use absolute 'No documented X'. "
+                        "EU AI Act Art.9/13/17/31 MUST include '(if classified as high-risk)'. "
+                        "NIST → 'alignment gap'; OWASP → 'exposure/vulnerability'."
+                    ),
                     "items": {"type": "string"}
                 },
 
@@ -202,7 +228,13 @@ TOOLS = [
                 # ── 叙述性摘要 ────────────────────────────────────────────
                 "narrative": {
                     "type": "string",
-                    "description": "2-4 sentence prose summary of the compliance assessment. Explain the risk tier, key failures, and most critical remediation."
+                    "description": (
+                        "2-4 sentence prose summary. Must cover: (1) EU AI Act risk tier and basis, "
+                        "(2) key compliance gaps using hedged language ('no evidence of X identified', not 'X is absent'), "
+                        "(3) governance/deployment impact of those gaps, "
+                        "(4) most critical remediation action. "
+                        "Do not make absolute assertions about what the system lacks."
+                    )
                 },
 
                 # ── Council 交接字段 ──────────────────────────────────────
