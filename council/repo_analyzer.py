@@ -227,30 +227,45 @@ def read_local_repo(path: str) -> dict[str, str]:
 
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
+_CATEGORIES = [
+    "Humanitarian Aid", "Peacekeeping", "Child Protection", "Labor Rights",
+    "Governance", "Language & Translation", "Healthcare", "Education", "Other",
+]
+_DEPLOY_ZONES = [
+    "Active Conflict Zone", "Post-Conflict Zone", "Development Context",
+    "UN Headquarters", "Field Office", "Global/Multi-Region",
+]
+
 _SYSTEM_PROMPT = """\
-You are an AI safety analyst. Your task is to read repository files and produce a
-structured system description for a formal AI safety evaluation.
+You are an AI safety analyst for UNICC. Analyse the provided content and return
+a JSON object (and ONLY a JSON object — no markdown fences, no commentary) with
+exactly these keys:
 
-The description will be reviewed by three expert panels:
-  1. Security & adversarial robustness
-  2. Governance & regulatory compliance (EU AI Act, GDPR, UNESCO, NIST)
-  3. UN mission fit & humanitarian principles
+  system_description : string  (300-600 words, comprehensive factual description
+                                 covering purpose, capabilities, architecture,
+                                 data flows, PII handling, and any visible risk
+                                 indicators or safety-relevant design choices)
+  capabilities       : string  (one sentence or short comma-separated list of
+                                 the system's key technical capabilities)
+  data_sources       : string  (brief description of data inputs / APIs / databases
+                                 the system consumes; empty string if not apparent)
+  human_oversight    : string  (any human review or override mechanisms visible
+                                 in the codebase; empty string if none apparent)
+  category           : string  (pick the single best match from:
+                                 Humanitarian Aid | Peacekeeping | Child Protection |
+                                 Labor Rights | Governance | Language & Translation |
+                                 Healthcare | Education | Other)
+  deploy_zone        : string  (pick the single best match from:
+                                 Active Conflict Zone | Post-Conflict Zone |
+                                 Development Context | UN Headquarters |
+                                 Field Office | Global/Multi-Region)
 
-Write a comprehensive, factual description covering:
-- Primary purpose and use case of the system
-- Key capabilities and features
-- Target users and deployment context
-- Technology stack and architecture overview
-- Data sources, data flows, and any PII or sensitive data involved
-- Human oversight and control mechanisms (if any visible)
-- Any risk indicators or safety-relevant design choices apparent from the code
-
-Length: 400-800 words. Base your description strictly on the provided files.
-Do not speculate beyond what is visible in the repository.
+Base every field strictly on the provided content. Do not speculate.
+Return valid JSON only.
 """
 
 _USER_TEMPLATE = """\
-Repository: {source_label}
+Source: {source_label}
 
 === DIRECTORY TREE ===
 {tree}
@@ -258,8 +273,97 @@ Repository: {source_label}
 === KEY FILES ===
 {files_text}
 
-Generate the structured system description now.
+Return the JSON object now.
 """
+
+_TEXT_TEMPLATE = """\
+Source: uploaded document / pasted text
+
+=== CONTENT ===
+{text}
+
+Return the JSON object now.
+"""
+
+_EMPTY_RESULT: dict = {
+    "system_description": "",
+    "capabilities": "",
+    "data_sources": "",
+    "human_oversight": "",
+    "category": "Other",
+    "deploy_zone": "Global/Multi-Region",
+}
+
+
+def _parse_structured(raw: str) -> dict:
+    """Extract the JSON object from the LLM response, tolerating minor noise."""
+    raw = raw.strip()
+    # Strip markdown code fences if the model added them
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        raw = "\n".join(l for l in lines if not l.startswith("```")).strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        # Try to find the first {...} block
+        start = raw.find("{")
+        end   = raw.rfind("}") + 1
+        if start != -1 and end > start:
+            try:
+                data = json.loads(raw[start:end])
+            except Exception:
+                return {**_EMPTY_RESULT, "system_description": raw}
+        else:
+            return {**_EMPTY_RESULT, "system_description": raw}
+
+    # Coerce category / deploy_zone to valid enum values
+    cat = data.get("category", "Other")
+    if cat not in _CATEGORIES:
+        cat = "Other"
+    zone = data.get("deploy_zone", "Global/Multi-Region")
+    if zone not in _DEPLOY_ZONES:
+        zone = "Global/Multi-Region"
+
+    return {
+        "system_description": str(data.get("system_description", "")),
+        "capabilities":       str(data.get("capabilities", "")),
+        "data_sources":       str(data.get("data_sources", "")),
+        "human_oversight":    str(data.get("human_oversight", "")),
+        "category":           cat,
+        "deploy_zone":        zone,
+    }
+
+
+def _call_llm(
+    user_message: str,
+    backend: str,
+    vllm_base_url: str,
+    vllm_model: str,
+    anthropic_api_key: Optional[str],
+) -> str:
+    if backend == "vllm":
+        from council.slm_backends import VLLMChatClient
+        client = VLLMChatClient(base_url=vllm_base_url, model=vllm_model)
+        response = client.messages.create(
+            model=vllm_model,
+            max_tokens=1200,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return response.content[0].text if response.content else ""
+    else:
+        import anthropic
+        key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
+        claude = anthropic.Anthropic(api_key=key)
+        response = claude.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1200,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return response.content[0].text if response.content else ""
 
 
 def generate_system_description(
@@ -269,16 +373,15 @@ def generate_system_description(
     vllm_base_url: str = "http://localhost:8000",
     vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct",
     anthropic_api_key: Optional[str] = None,
-) -> str:
+) -> dict:
     """
-    Call an LLM to turn collected repo files into a system description string.
+    Call an LLM to turn collected repo files into a structured dict.
     Modifies `files` in-place (removes __directory_tree__ key).
+    Returns a dict with keys: system_description, capabilities,
+    data_sources, human_oversight, category, deploy_zone.
     """
     tree = files.pop("__directory_tree__", "")
-
-    files_parts: list[str] = []
-    for path, content in files.items():
-        files_parts.append(f"--- {path} ---\n{content}")
+    files_parts = [f"--- {path} ---\n{content}" for path, content in files.items()]
     files_text = "\n\n".join(files_parts)
 
     user_message = _USER_TEMPLATE.format(
@@ -286,31 +389,25 @@ def generate_system_description(
         tree=tree[:3_000] if tree else "(not available)",
         files_text=files_text[:9_000] if files_text else "(not available)",
     )
+    raw = _call_llm(user_message, backend, vllm_base_url, vllm_model, anthropic_api_key)
+    return _parse_structured(raw)
 
-    if backend == "vllm":
-        from council.slm_backends import VLLMChatClient
-        client = VLLMChatClient(base_url=vllm_base_url, model=vllm_model)
-        response = client.messages.create(
-            model=vllm_model,
-            max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        return response.content[0].text if response.content else ""
 
-    else:
-        import anthropic
-        key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
-        if not key:
-            raise EnvironmentError("ANTHROPIC_API_KEY is not set.")
-        claude = anthropic.Anthropic(api_key=key)
-        response = claude.messages.create(
-            model="claude-3-5-haiku-20241022",
-            max_tokens=1024,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-        return response.content[0].text if response.content else ""
+def analyze_text(
+    text: str,
+    source_label: str = "pasted text",
+    backend: str = "vllm",
+    vllm_base_url: str = "http://localhost:8000",
+    vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct",
+    anthropic_api_key: Optional[str] = None,
+) -> dict:
+    """
+    Analyze raw text (pasted description or parsed PDF/Markdown) and return
+    the same structured dict as generate_system_description.
+    """
+    user_message = _TEXT_TEMPLATE.format(text=text[:10_000])
+    raw = _call_llm(user_message, backend, vllm_base_url, vllm_model, anthropic_api_key)
+    return _parse_structured(raw)
 
 
 # ── public entry point ────────────────────────────────────────────────────────
@@ -322,9 +419,11 @@ def analyze_repo(
     vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct",
     github_token: Optional[str] = None,
     anthropic_api_key: Optional[str] = None,
-) -> str:
+) -> dict:
     """
-    High-level entry point — returns a system_description string.
+    High-level entry point — returns a structured dict with keys:
+    system_description, capabilities, data_sources, human_oversight,
+    category, deploy_zone.
 
     Args:
         source:        GitHub URL (https://github.com/owner/repo) or local path.
@@ -333,16 +432,6 @@ def analyze_repo(
         vllm_model:    Model name (only used when backend='vllm').
         github_token:  Optional GitHub PAT for private repos.
         anthropic_api_key: Optional; falls back to ANTHROPIC_API_KEY env var.
-
-    Returns:
-        A plain-text system description ready for evaluate_agent().
-
-    Example:
-        from council.repo_analyzer import analyze_repo
-        from council.council_orchestrator import evaluate_agent
-
-        desc   = analyze_repo("https://github.com/owner/repo")
-        report = evaluate_agent(agent_id="owner-repo", system_description=desc)
     """
     source = source.strip()
     is_github = source.startswith("http") or "github.com" in source

@@ -117,7 +117,8 @@ export async function getEvaluationByIncident(incidentId: string): Promise<Counc
 }
 
 export interface RepoAnalyzeRequest {
-  source: string
+  source?: string
+  text?: string
   backend?: 'claude' | 'vllm'
   vllm_base_url?: string
   vllm_model?: string
@@ -126,6 +127,11 @@ export interface RepoAnalyzeRequest {
 
 export interface RepoAnalyzeResponse {
   system_description: string
+  capabilities: string
+  data_sources: string
+  human_oversight: string
+  category: string
+  deploy_zone: string
   source: string
 }
 

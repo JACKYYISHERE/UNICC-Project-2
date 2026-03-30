@@ -404,10 +404,14 @@ class CouncilEvaluateRequest(BaseModel):
 
 class RepoAnalyzeRequest(BaseModel):
     source: str = Field(
-        ...,
-        description="GitHub URL (https://github.com/owner/repo) or absolute local path",
+        default="",
+        description="GitHub URL or absolute local path (omit when sending raw text)",
     )
-    backend: str = Field("vllm", description="claude|vllm — LLM used to generate the description")
+    text: str = Field(
+        default="",
+        description="Raw text to analyse (PDF/Markdown content). Overrides source.",
+    )
+    backend: str = Field("vllm", description="claude|vllm")
     vllm_base_url: str = "http://localhost:8000"
     vllm_model: str = "meta-llama/Meta-Llama-3-70B-Instruct"
     github_token: str = Field("", description="Optional GitHub PAT for private repos")
@@ -448,19 +452,29 @@ def health() -> dict:
 @app.post("/analyze/repo")
 def analyze_repo_endpoint(request: RepoAnalyzeRequest) -> dict:
     """
-    Collect key files from a GitHub URL or local path and call an LLM to
-    generate a structured system description ready for /evaluate/council.
+    Structured analysis of a GitHub repo, local path, or raw text.
+    Returns: system_description, capabilities, data_sources, human_oversight,
+             category, deploy_zone, source.
     """
+    kwargs = dict(
+        backend=request.backend,
+        vllm_base_url=request.vllm_base_url,
+        vllm_model=request.vllm_model,
+    )
     try:
-        from council.repo_analyzer import analyze_repo
-        description = analyze_repo(
-            source=request.source,
-            backend=request.backend,
-            vllm_base_url=request.vllm_base_url,
-            vllm_model=request.vllm_model,
-            github_token=request.github_token or None,
-        )
-        return {"system_description": description, "source": request.source}
+        if request.text.strip():
+            from council.repo_analyzer import analyze_text
+            result = analyze_text(text=request.text, source_label="uploaded text", **kwargs)
+            result["source"] = "text"
+        else:
+            from council.repo_analyzer import analyze_repo
+            result = analyze_repo(
+                source=request.source,
+                github_token=request.github_token or None,
+                **kwargs,
+            )
+            result["source"] = request.source
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

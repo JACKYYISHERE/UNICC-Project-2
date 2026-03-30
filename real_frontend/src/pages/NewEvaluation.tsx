@@ -4,7 +4,6 @@ import { submitCouncilEvaluation, analyzeRepo, type CouncilReportResponse } from
 import { parseAgentDoc } from '../utils/parseAgentDoc'
 
 interface Props {
-  /** 提交成功后调用，传入真实 Council 报告 */
   onSubmit: (report: CouncilReportResponse) => void
 }
 
@@ -12,39 +11,89 @@ const CATEGORIES = [
   'Humanitarian Aid', 'Peacekeeping', 'Child Protection', 'Labor Rights',
   'Governance', 'Language & Translation', 'Healthcare', 'Education', 'Other',
 ]
-
 const DEPLOY_ZONES = [
   'Active Conflict Zone', 'Post-Conflict Zone', 'Development Context',
   'UN Headquarters', 'Field Office', 'Global/Multi-Region',
 ]
 
-const defaultCouncilBackend = (): 'claude' | 'vllm' => {
+const defaultBackend = (): 'claude' | 'vllm' => {
   const v = import.meta.env.VITE_COUNCIL_BACKEND
   return v === 'claude' ? 'claude' : 'vllm'
 }
 
+type InputMode = 'paste' | 'file' | 'repo'
+
 const NewEvaluation: FC<Props> = ({ onSubmit }) => {
-  const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [loading, setLoading] = useState(false)
+  const [step, setStep]         = useState<1 | 2>(1)
+  const [loading, setLoading]   = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+
   const [form, setForm] = useState({
     system_name: '', agent_id: '', category: '', deploy_zone: '',
     description: '', capabilities: '', data_sources: '', human_oversight: '',
-    mode: 'B' as 'A' | 'B',
-    llm_backend: defaultCouncilBackend(),
-    vllm_base_url:
-      (import.meta.env.VITE_VLLM_BASE_URL as string | undefined) ?? 'http://127.0.0.1:8000',
-    vllm_model:
-      (import.meta.env.VITE_VLLM_MODEL as string | undefined) ??
-      'meta-llama/Meta-Llama-3-70B-Instruct',
   })
-  const [inputMode, setInputMode] = useState<'paste' | 'file' | 'repo'>('paste')
-  const [fileError, setFileError] = useState<string | null>(null)
-  const [fileLoading, setFileLoading] = useState(false)
+
+  const [inputMode, setInputMode]       = useState<InputMode>('paste')
+  const [repoSource, setRepoSource]     = useState('')
+  const [analyzing, setAnalyzing]       = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [autoFilled, setAutoFilled]     = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [repoSource, setRepoSource] = useState('')
-  const [repoAnalyzing, setRepoAnalyzing] = useState(false)
-  const [repoError, setRepoError] = useState<string | null>(null)
+
+  const set = (k: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+      setForm(f => ({ ...f, [k]: e.target.value }))
+    }
+
+  // Apply structured analysis result to the form
+  const applyResult = (r: { system_description: string; capabilities: string; data_sources: string; human_oversight: string; category: string; deploy_zone: string }) => {
+    setForm(f => ({
+      ...f,
+      description:     r.system_description || f.description,
+      capabilities:    r.capabilities       || f.capabilities,
+      data_sources:    r.data_sources        || f.data_sources,
+      human_oversight: r.human_oversight     || f.human_oversight,
+      category:        r.category && CATEGORIES.includes(r.category) ? r.category : f.category,
+      deploy_zone:     r.deploy_zone && DEPLOY_ZONES.includes(r.deploy_zone) ? r.deploy_zone : f.deploy_zone,
+    }))
+    setAutoFilled(true)
+    setInputMode('paste')
+  }
+
+  // GitHub / local repo → structured extraction
+  const handleRepoAnalyze = async () => {
+    if (!repoSource.trim()) return
+    hapticButton()
+    setAnalyzeError(null)
+    setAnalyzing(true)
+    try {
+      const result = await analyzeRepo({ source: repoSource.trim(), backend: defaultBackend() })
+      applyResult(result)
+    } catch (e) {
+      setAnalyzeError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAnalyzing(false)
+    }
+  }
+
+  // File upload → parse text → send to backend for structured extraction
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    setAnalyzeError(null)
+    setAnalyzing(true)
+    hapticSelect()
+    try {
+      const text = await parseAgentDoc(f)
+      const result = await analyzeRepo({ text, backend: defaultBackend() })
+      applyResult(result)
+    } catch (err) {
+      setAnalyzeError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAnalyzing(false)
+      e.target.value = ''
+    }
+  }
 
   const handleSubmit = async () => {
     setSubmitError(null)
@@ -56,15 +105,11 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
         system_description: [form.description, form.capabilities].filter(Boolean).join('\n\n'),
         purpose: form.category || undefined,
         deployment_context: form.deploy_zone || undefined,
-        data_access: form.data_sources ? [form.data_sources] : [],
+        data_access:    form.data_sources    ? [form.data_sources]    : [],
         risk_indicators: form.human_oversight ? [form.human_oversight] : [],
-        backend: form.llm_backend,
-      }
-      if (form.llm_backend === 'vllm') {
-        const url = form.vllm_base_url.trim()
-        const model = form.vllm_model.trim()
-        if (url) payload.vllm_base_url = url
-        if (model) payload.vllm_model = model
+        backend: defaultBackend(),
+        vllm_base_url: import.meta.env.VITE_VLLM_BASE_URL || 'http://127.0.0.1:8000',
+        vllm_model: import.meta.env.VITE_VLLM_MODEL || 'meta-llama/Meta-Llama-3-70B-Instruct',
       }
       const report = await submitCouncilEvaluation(payload)
       onSubmit(report)
@@ -75,63 +120,21 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
     }
   }
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-    setForm(f => ({ ...f, [k]: e.target.value }))
-
-  const canProceed1 = form.system_name && form.agent_id && form.category && form.deploy_zone
-  const canProceed2 = form.description && form.capabilities
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    if (!f) return
-    setFileError(null)
-    setFileLoading(true)
-    hapticSelect()
-    try {
-      const text = await parseAgentDoc(f)
-      setForm(prev => ({ ...prev, description: text }))
-    } catch (err) {
-      setFileError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setFileLoading(false)
-      e.target.value = ''
-    }
-  }
-
-  const handleRepoAnalyze = async () => {
-    if (!repoSource.trim()) return
-    setRepoError(null)
-    setRepoAnalyzing(true)
-    hapticButton()
-    try {
-      const result = await analyzeRepo({
-        source: repoSource.trim(),
-        backend: form.llm_backend,
-        vllm_base_url: form.vllm_base_url,
-        vllm_model: form.vllm_model,
-      })
-      setForm(f => ({ ...f, description: result.system_description }))
-      setInputMode('paste')
-    } catch (err) {
-      setRepoError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setRepoAnalyzing(false)
-    }
-  }
+  const canProceed = !!(form.system_name && form.agent_id && form.description)
 
   return (
     <div className="p-8 max-w-3xl mx-auto animate-fade-in">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-apple-gray-900 mb-1">New Evaluation</h1>
         <p className="text-sm text-apple-gray-400">Submit an AI system for safety assessment by the UNICC Council</p>
       </div>
 
       {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-8">
-        {(['System Info', 'Capabilities', 'Review & Submit'] as const).map((label, i) => {
-          const s = (i + 1) as 1 | 2 | 3
-          const done = step > s
+      <div className="flex items-center gap-2 mb-7">
+        {(['System Details', 'Review & Submit'] as const).map((label, i) => {
+          const s = (i + 1) as 1 | 2
+          const done   = step > s
           const active = step === s
           return (
             <div key={label} className="flex items-center gap-2">
@@ -140,89 +143,129 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
                 {done ? '✓' : s}
               </div>
               <span className={`text-xs font-medium ${active ? 'text-apple-gray-900' : 'text-apple-gray-400'}`}>{label}</span>
-              {i < 2 && <div className="w-8 h-px bg-apple-gray-200 mx-1" />}
+              {i < 1 && <div className="w-8 h-px bg-apple-gray-200 mx-1" />}
             </div>
           )
         })}
       </div>
 
       <div className="card p-7 space-y-6">
-        {/* Step 1 */}
-        {step === 1 && (
-          <div className="space-y-5 animate-slide-up">
-            <div>
-              <p className="section-label">System Identification</p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">System Name *</label>
-                  <input className="input-field" placeholder="e.g. RefugeeAssist v2" value={form.system_name} onChange={set('system_name')} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Agent ID *</label>
-                  <input className="input-field" placeholder="e.g. refugee-assist-v2" value={form.agent_id} onChange={set('agent_id')} />
-                </div>
-              </div>
-            </div>
-            <div>
-              <p className="section-label">LLM Backend</p>
-              <div className="flex gap-3 mt-2">
-                {(['vllm', 'claude'] as const).map(b => (
-                  <label
-                    key={b}
-                    className={`flex items-center gap-2 px-4 py-2.5 rounded-apple border-2 cursor-pointer transition-colors flex-1
-                      ${form.llm_backend === b ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}
-                  >
-                    <input
-                      type="radio"
-                      name="llm_backend"
-                      checked={form.llm_backend === b}
-                      onChange={() => { hapticSelect(); setForm(f => ({ ...f, llm_backend: b })) }}
-                      className="w-4 h-4 text-apple-blue"
-                    />
-                    <div>
-                      <span className="text-sm font-semibold text-apple-gray-900">
-                        {b === 'vllm' ? 'vLLM / SLM' : 'Claude'}
-                      </span>
-                      <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded
-                        ${b === 'vllm' ? 'bg-apple-blue text-white' : 'bg-apple-gray-200 text-apple-gray-500'}`}>
-                        {b === 'vllm' ? 'Primary' : 'Fallback'}
-                      </span>
-                    </div>
-                  </label>
-                ))}
-              </div>
 
-              {/* Advanced — vLLM URL/model, collapsed by default */}
-              {form.llm_backend === 'vllm' && (
-                <details className="mt-3 group">
-                  <summary className="text-[11px] text-apple-blue cursor-pointer select-none list-none flex items-center gap-1">
-                    <span className="group-open:rotate-90 inline-block transition-transform">▶</span> Advanced server settings
-                  </summary>
-                  <div className="mt-2 space-y-2 pl-4 border-l-2 border-apple-gray-100">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">Base URL</label>
-                      <input className="input-field font-mono text-xs" placeholder="http://127.0.0.1:8000"
-                        value={form.vllm_base_url} onChange={e => setForm(f => ({ ...f, vllm_base_url: e.target.value }))} />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">Model</label>
-                      <input className="input-field font-mono text-xs" placeholder="meta-llama/Meta-Llama-3-70B-Instruct"
-                        value={form.vllm_model} onChange={e => setForm(f => ({ ...f, vllm_model: e.target.value }))} />
-                    </div>
-                  </div>
-                </details>
-              )}
-            </div>
+        {/* ── Step 1 ─────────────────────────────────────────────── */}
+        {step === 1 && (
+          <div className="space-y-6 animate-slide-up">
+
+            {/* System identification */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Category *</label>
+                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">System Name *</label>
+                <input className="input-field" placeholder="e.g. RefugeeAssist v2"
+                  value={form.system_name} onChange={set('system_name')} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Agent ID *</label>
+                <input className="input-field" placeholder="e.g. refugee-assist-v2"
+                  value={form.agent_id} onChange={set('agent_id')} />
+              </div>
+            </div>
+
+            {/* Input mode */}
+            <div>
+              <p className="section-label">System Description *</p>
+              <div className="flex gap-4 mb-3 flex-wrap items-center">
+                {(['paste', 'file', 'repo'] as InputMode[]).map(m => (
+                  <label key={m} className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="inputMode" checked={inputMode === m}
+                      onChange={() => { hapticSelect(); setInputMode(m); setAnalyzeError(null) }}
+                      className="text-apple-blue" />
+                    <span className="text-sm capitalize">
+                      {m === 'paste' ? 'Paste text' : m === 'file' ? 'Upload file' : 'GitHub / Local repo'}
+                    </span>
+                  </label>
+                ))}
+
+                {/* File picker */}
+                {inputMode === 'file' && (
+                  <>
+                    <input ref={fileInputRef} type="file" accept=".pdf,.json,.md,.markdown"
+                      className="hidden" onChange={handleFileChange} />
+                    <button type="button" className="btn-secondary text-xs"
+                      onClick={() => fileInputRef.current?.click()} disabled={analyzing}>
+                      {analyzing ? 'Analyzing…' : 'Choose PDF / JSON / MD'}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Repo input */}
+              {inputMode === 'repo' && (
+                <div className="mb-3 space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      className="input-field font-mono text-xs flex-1"
+                      placeholder="https://github.com/owner/repo  or  /absolute/local/path"
+                      value={repoSource}
+                      onChange={e => setRepoSource(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') void handleRepoAnalyze() }}
+                    />
+                    <button
+                      type="button"
+                      className={`btn-primary text-xs whitespace-nowrap ${analyzing || !repoSource.trim() ? 'opacity-40 pointer-events-none' : ''}`}
+                      onClick={handleRepoAnalyze}
+                      disabled={analyzing || !repoSource.trim()}
+                    >
+                      {analyzing ? 'Analyzing…' : 'Auto-fill →'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-apple-gray-400">
+                    Reads README, code, and dependencies — auto-fills all fields below.
+                  </p>
+                </div>
+              )}
+
+              {/* Analyzing spinner */}
+              {analyzing && (
+                <div className="flex items-center gap-2 text-xs text-apple-gray-500 mb-3">
+                  <div className="w-3 h-3 border border-apple-blue border-t-transparent rounded-full animate-spin" />
+                  Reading and analysing…
+                </div>
+              )}
+              {analyzeError && <p className="text-xs text-apple-red mb-2">{analyzeError}</p>}
+              {autoFilled && !analyzeError && (
+                <p className="text-[11px] text-apple-green mb-2">✓ Fields auto-filled — review and edit as needed.</p>
+              )}
+
+              {/* Description textarea */}
+              <textarea
+                className="input-field resize-none h-28"
+                placeholder="Describe what this AI system does…"
+                value={form.description}
+                onChange={set('description')}
+              />
+            </div>
+
+            {/* Capabilities */}
+            <div>
+              <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Key Capabilities</label>
+              <textarea
+                className="input-field resize-none h-16"
+                placeholder="e.g. automated allocation, biometric matching, NLP…"
+                value={form.capabilities}
+                onChange={set('capabilities')}
+              />
+            </div>
+
+            {/* Category + Deploy zone */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Category</label>
                 <select className="input-field" value={form.category} onChange={set('category')}>
                   <option value="">Select category</option>
                   {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Deployment Zone *</label>
+                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Deployment Zone</label>
                 <select className="input-field" value={form.deploy_zone} onChange={set('deploy_zone')}>
                   <option value="">Select zone</option>
                   {DEPLOY_ZONES.map(z => <option key={z}>{z}</option>)}
@@ -230,128 +273,49 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
               </div>
             </div>
 
-            <div className="p-4 rounded-apple bg-apple-blue-light border border-blue-100">
-              <div className="flex gap-2.5">
-                <span className="text-blue-500 text-base mt-0.5">ℹ</span>
+            {form.deploy_zone === 'Active Conflict Zone' || form.deploy_zone === 'Post-Conflict Zone' ? (
+              <div className="p-3 rounded-apple bg-apple-blue-light border border-blue-100 flex gap-2.5">
+                <span className="text-blue-500 text-sm mt-0.5">ℹ</span>
                 <p className="text-xs text-apple-blue leading-relaxed">
-                  Systems deployed in <strong>Active or Post-Conflict Zones</strong> automatically qualify as High-Risk under EU AI Act Annex III and will receive additional security scrutiny.
+                  Systems in <strong>{form.deploy_zone}</strong> automatically qualify as High-Risk under EU AI Act Annex III.
                 </p>
               </div>
-            </div>
-          </div>
-        )}
+            ) : null}
 
-        {/* Step 2 */}
-        {step === 2 && (
-          <div className="space-y-5 animate-slide-up">
-            <div>
-              <p className="section-label">Agent Description Input</p>
-              <div className="flex gap-4 mb-3 flex-wrap">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="inputMode" checked={inputMode === 'paste'} onChange={() => { hapticSelect(); setInputMode('paste'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
-                  <span className="text-sm">Paste text</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="inputMode" checked={inputMode === 'file'} onChange={() => { hapticSelect(); setInputMode('file'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
-                  <span className="text-sm">Upload file</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="inputMode" checked={inputMode === 'repo'} onChange={() => { hapticSelect(); setInputMode('repo'); setFileError(null); setRepoError(null) }} className="text-apple-blue" />
-                  <span className="text-sm">GitHub / Local repo</span>
-                </label>
-                {inputMode === 'file' && (
-                  <>
-                    <input ref={fileInputRef} type="file" accept=".pdf,.json,.md,.markdown" className="hidden" onChange={handleFileChange} />
-                    <button type="button" className="btn-secondary text-xs" onClick={() => fileInputRef.current?.click()} disabled={fileLoading}>
-                      {fileLoading ? 'Parsing…' : 'PDF / JSON / Markdown'}
-                    </button>
-                  </>
-                )}
-              </div>
-              {fileError && <p className="text-xs text-apple-red mb-2">{fileError}</p>}
-              {inputMode === 'repo' && (
-                <div className="mb-4 space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      className="input-field font-mono text-xs flex-1"
-                      placeholder="https://github.com/owner/repo  or  /absolute/local/path"
-                      value={repoSource}
-                      onChange={e => setRepoSource(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleRepoAnalyze() }}
-                    />
-                    <button
-                      type="button"
-                      className={`btn-primary text-xs whitespace-nowrap ${repoAnalyzing || !repoSource.trim() ? 'opacity-40 pointer-events-none' : ''}`}
-                      onClick={handleRepoAnalyze}
-                      disabled={repoAnalyzing || !repoSource.trim()}
-                    >
-                      {repoAnalyzing ? 'Analyzing…' : 'Analyze →'}
-                    </button>
-                  </div>
-                  {repoAnalyzing && (
-                    <div className="flex items-center gap-2 text-xs text-apple-gray-500">
-                      <div className="w-3 h-3 border border-apple-blue border-t-transparent rounded-full animate-spin" />
-                      Fetching files and generating description via {form.llm_backend === 'vllm' ? 'vLLM' : 'Claude'}…
-                    </div>
-                  )}
-                  {repoError && <p className="text-xs text-apple-red">{repoError}</p>}
-                  <p className="text-[11px] text-apple-gray-400">
-                    Uses the LLM backend selected in Step 1. After analysis the description will appear below for review.
-                  </p>
+            {/* Additional context — collapsed */}
+            <details className="group">
+              <summary className="text-[11px] text-apple-gray-500 cursor-pointer select-none list-none flex items-center gap-1 hover:text-apple-gray-700">
+                <span className="group-open:rotate-90 inline-block transition-transform">▶</span>
+                Additional context (Data Sources · Human Oversight)
+              </summary>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Data Sources</label>
+                  <textarea className="input-field resize-none h-20"
+                    placeholder="Databases, APIs, user-provided data…"
+                    value={form.data_sources} onChange={set('data_sources')} />
                 </div>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">System Description *</label>
-              <textarea
-                className="input-field resize-none h-28"
-                placeholder="Describe what this AI system does... Or upload a PDF, JSON, or Markdown file above."
-                value={form.description}
-                onChange={set('description')}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Key Capabilities *</label>
-              <textarea
-                className="input-field resize-none h-20"
-                placeholder="List the main capabilities: e.g. automated allocation, biometric matching, natural language processing..."
-                value={form.capabilities}
-                onChange={set('capabilities')}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Data Sources</label>
-                <textarea
-                  className="input-field resize-none h-20"
-                  placeholder="Describe data inputs: databases, APIs, user-provided data..."
-                  value={form.data_sources}
-                  onChange={set('data_sources')}
-                />
+                <div>
+                  <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Human Oversight</label>
+                  <textarea className="input-field resize-none h-20"
+                    placeholder="Review processes, appeal mechanisms…"
+                    value={form.human_oversight} onChange={set('human_oversight')} />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-apple-gray-600 mb-1.5">Human Oversight</label>
-                <textarea
-                  className="input-field resize-none h-20"
-                  placeholder="Describe any human review processes, appeal mechanisms, override capabilities..."
-                  value={form.human_oversight}
-                  onChange={set('human_oversight')}
-                />
-              </div>
-            </div>
+            </details>
           </div>
         )}
 
-        {/* Step 3 */}
-        {step === 3 && (
+        {/* ── Step 2: Review ───────────────────────────────────────── */}
+        {step === 2 && (
           <div className="space-y-5 animate-slide-up">
             <p className="section-label">Review Submission</p>
             <div className="space-y-3">
               {[
-                ['System Name', form.system_name],
-                ['Agent ID', form.agent_id],
-                ['Category', form.category],
-                ['Deployment Zone', form.deploy_zone],
+                ['System Name',    form.system_name],
+                ['Agent ID',       form.agent_id],
+                ['Category',       form.category || '—'],
+                ['Deployment Zone',form.deploy_zone || '—'],
               ].map(([k, v]) => (
                 <div key={k} className="flex justify-between py-2.5 border-b border-apple-gray-100">
                   <span className="text-xs text-apple-gray-400">{k}</span>
@@ -359,18 +323,10 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
                 </div>
               ))}
             </div>
-            <div className="p-4 rounded-apple bg-apple-gray-50 border border-apple-gray-100">
-              <p className="text-xs font-semibold text-apple-gray-600 mb-2">Description</p>
-              <p className="text-sm text-apple-gray-700 leading-relaxed">{form.description}</p>
-            </div>
 
             <div className="p-4 rounded-apple bg-apple-gray-50 border border-apple-gray-100">
-              <p className="text-xs font-semibold text-apple-gray-600 mb-1">LLM Backend</p>
-              <p className="text-sm text-apple-gray-700">
-                {form.llm_backend === 'claude'
-                  ? 'Claude (Anthropic API)'
-                  : `vLLM / SLM — ${form.vllm_base_url || 'http://127.0.0.1:8000'}`}
-              </p>
+              <p className="text-xs font-semibold text-apple-gray-600 mb-2">Description</p>
+              <p className="text-sm text-apple-gray-700 leading-relaxed line-clamp-5">{form.description}</p>
             </div>
 
             <div className="p-4 rounded-apple bg-apple-gray-50 border border-apple-gray-100">
@@ -392,15 +348,16 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
 
             {submitError && (
               <div className="p-4 rounded-apple bg-apple-red-bg border border-apple-red/30">
-                <p className="text-sm text-apple-red font-medium">提交失败</p>
+                <p className="text-sm text-apple-red font-medium">Submit failed</p>
                 <p className="text-xs text-apple-gray-600 mt-1">{submitError}</p>
-                <p className="text-[11px] text-apple-gray-400 mt-2">请确认后端 API 已启动（uvicorn frontend_api.main:app --port 8100）并重试。</p>
+                <p className="text-[11px] text-apple-gray-400 mt-2">Make sure the backend is running: <code className="font-mono">uvicorn frontend_api.main:app --port 8100</code></p>
               </div>
             )}
+
             {loading && (
               <div className="flex flex-col items-center py-6 gap-3">
                 <div className="w-8 h-8 border-2 border-apple-blue border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm text-apple-gray-500">正在执行 Council 全链路评估（3 Experts + Critiques + Arbitration）…</p>
+                <p className="text-sm text-apple-gray-500">Running Council evaluation (3 Experts + Critiques + Arbitration)…</p>
               </div>
             )}
           </div>
@@ -410,20 +367,21 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
         {!loading && (
           <div className="flex justify-between pt-2 border-t border-apple-gray-100">
             {step > 1
-              ? <button className="btn-secondary" onClick={() => { hapticSelect(); setStep(s => (s - 1) as 1 | 2 | 3) }}>Back</button>
+              ? <button className="btn-secondary" onClick={() => { hapticSelect(); setStep(1) }}>Back</button>
               : <div />
             }
-            {step < 3
+            {step === 1
               ? (
                 <button
-                  className={`btn-primary ${(step === 1 ? !canProceed1 : !canProceed2) ? 'opacity-40 pointer-events-none' : ''}`}
-                  onClick={() => { hapticButton(); setStep(s => (s + 1) as 1 | 2 | 3) }}
+                  className={`btn-primary ${!canProceed ? 'opacity-40 pointer-events-none' : ''}`}
+                  onClick={() => { hapticButton(); setStep(2) }}
+                  disabled={!canProceed}
                 >
-                  Continue
+                  Review →
                 </button>
               )
               : (
-                <button className="btn-primary" onClick={() => { hapticButton(); handleSubmit() }}>
+                <button className="btn-primary" onClick={() => { hapticButton(); void handleSubmit() }}>
                   Submit for Evaluation →
                 </button>
               )
