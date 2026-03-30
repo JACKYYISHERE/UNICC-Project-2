@@ -6,6 +6,12 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
+# On DGX (GPU available), install full ML dependencies too
+if python3 -c "import torch; torch.cuda.is_available()" 2>/dev/null; then
+  echo "[start] GPU detected — installing full ML dependencies..."
+  pip install -q -r "$ROOT/requirements-full.txt"
+fi
+
 # Install frontend deps if needed
 if [ ! -d "$ROOT/real_frontend/node_modules" ]; then
   echo "[start] Installing frontend dependencies..."

@@ -1,0 +1,6 @@
+# UNICC Council — full dependencies including ML stack
+# Use this on DGX or any machine with sufficient disk/memory
+# Install: pip install -r requirements-full.txt
+-r requirements.txt
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
