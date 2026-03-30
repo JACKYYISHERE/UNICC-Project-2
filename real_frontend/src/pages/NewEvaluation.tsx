@@ -164,92 +164,54 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
               </div>
             </div>
             <div>
-              <p className="section-label">Council LLM backend</p>
-              <p className="text-[11px] text-apple-gray-400 mb-2">
-                Full pipeline (3 experts + critiques) uses this backend. Optional env defaults:{' '}
-                <code className="text-[10px] bg-apple-gray-100 px-1 rounded">VITE_COUNCIL_BACKEND</code>,{' '}
-                <code className="text-[10px] bg-apple-gray-100 px-1 rounded">VITE_VLLM_BASE_URL</code>,{' '}
-                <code className="text-[10px] bg-apple-gray-100 px-1 rounded">VITE_VLLM_MODEL</code>.
-              </p>
-              <div className="flex flex-col gap-3 mt-2">
-                {/* vLLM — primary */}
-                <label className={`flex items-start gap-3 p-3 rounded-apple border-2 cursor-pointer transition-colors ${form.llm_backend === 'vllm' ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}>
-                  <input
-                    type="radio"
-                    name="llm_backend"
-                    checked={form.llm_backend === 'vllm'}
-                    onChange={() => { hapticSelect(); setForm(f => ({ ...f, llm_backend: 'vllm' })) }}
-                    className="mt-1 w-4 h-4 text-apple-blue"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-apple-gray-900">vLLM / SLM</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wide bg-apple-blue text-white px-1.5 py-0.5 rounded">Primary</span>
+              <p className="section-label">LLM Backend</p>
+              <div className="flex gap-3 mt-2">
+                {(['vllm', 'claude'] as const).map(b => (
+                  <label
+                    key={b}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-apple border-2 cursor-pointer transition-colors flex-1
+                      ${form.llm_backend === b ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="llm_backend"
+                      checked={form.llm_backend === b}
+                      onChange={() => { hapticSelect(); setForm(f => ({ ...f, llm_backend: b })) }}
+                      className="w-4 h-4 text-apple-blue"
+                    />
+                    <div>
+                      <span className="text-sm font-semibold text-apple-gray-900">
+                        {b === 'vllm' ? 'vLLM / SLM' : 'Claude'}
+                      </span>
+                      <span className={`ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded
+                        ${b === 'vllm' ? 'bg-apple-blue text-white' : 'bg-apple-gray-200 text-apple-gray-500'}`}>
+                        {b === 'vllm' ? 'Primary' : 'Fallback'}
+                      </span>
                     </div>
-                    <p className="text-xs text-apple-gray-500 mt-0.5 mb-3">OpenAI-compatible endpoint. All experts and critiques route through your inference server.</p>
-                    {form.llm_backend === 'vllm' && (
-                      <div className="space-y-3 pt-1">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">vLLM base URL</label>
-                          <input
-                            className="input-field font-mono text-xs"
-                            placeholder="http://127.0.0.1:8000"
-                            value={form.vllm_base_url}
-                            onChange={e => setForm(f => ({ ...f, vllm_base_url: e.target.value }))}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">Model name</label>
-                          <input
-                            className="input-field font-mono text-xs"
-                            placeholder="meta-llama/Meta-Llama-3-70B-Instruct"
-                            value={form.vllm_model}
-                            onChange={e => setForm(f => ({ ...f, vllm_model: e.target.value }))}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </label>
-                {/* Claude — fallback / testing */}
-                <label className={`flex items-start gap-3 p-3 rounded-apple border-2 cursor-pointer transition-colors ${form.llm_backend === 'claude' ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}>
-                  <input
-                    type="radio"
-                    name="llm_backend"
-                    checked={form.llm_backend === 'claude'}
-                    onChange={() => { hapticSelect(); setForm(f => ({ ...f, llm_backend: 'claude' })) }}
-                    className="mt-1 w-4 h-4 text-apple-blue"
-                  />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-apple-gray-900">Claude (Anthropic API)</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wide bg-apple-gray-300 text-apple-gray-600 px-1.5 py-0.5 rounded">Fallback / Test</span>
-                    </div>
-                    <p className="text-xs text-apple-gray-500 mt-0.5">Requires <code className="text-[10px] bg-apple-gray-100 px-1 rounded">ANTHROPIC_API_KEY</code> on the server. No local GPU needed.</p>
-                  </div>
-                </label>
+                  </label>
+                ))}
               </div>
-            </div>
 
-            <div>
-              <p className="section-label">Expert 1 style (reference only)</p>
-              <p className="text-[11px] text-apple-gray-400 mb-2">Council run uses Expert 1 document-analysis path from the orchestrator. Modes below are for future Expert1-only API use.</p>
-              <div className="flex flex-col gap-3 mt-2">
-                <label className={`flex items-start gap-3 p-3 rounded-apple border-2 cursor-pointer transition-colors ${form.mode === 'A' ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}>
-                  <input type="radio" name="mode" value="A" checked={form.mode === 'A'} onChange={() => { hapticSelect(); setForm(f => ({ ...f, mode: 'A' })) }} className="mt-1 w-4 h-4 text-apple-blue" />
-                  <div>
-                    <span className="text-sm font-semibold text-apple-gray-900">Mode A</span>
-                    <p className="text-xs text-apple-gray-500 mt-0.5">文档分析 — 仅根据系统描述打分，不执行 live 攻击（更快）</p>
+              {/* Advanced — vLLM URL/model, collapsed by default */}
+              {form.llm_backend === 'vllm' && (
+                <details className="mt-3 group">
+                  <summary className="text-[11px] text-apple-blue cursor-pointer select-none list-none flex items-center gap-1">
+                    <span className="group-open:rotate-90 inline-block transition-transform">▶</span> Advanced server settings
+                  </summary>
+                  <div className="mt-2 space-y-2 pl-4 border-l-2 border-apple-gray-100">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">Base URL</label>
+                      <input className="input-field font-mono text-xs" placeholder="http://127.0.0.1:8000"
+                        value={form.vllm_base_url} onChange={e => setForm(f => ({ ...f, vllm_base_url: e.target.value }))} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-apple-gray-600 mb-1">Model</label>
+                      <input className="input-field font-mono text-xs" placeholder="meta-llama/Meta-Llama-3-70B-Instruct"
+                        value={form.vllm_model} onChange={e => setForm(f => ({ ...f, vllm_model: e.target.value }))} />
+                    </div>
                   </div>
-                </label>
-                <label className={`flex items-start gap-3 p-3 rounded-apple border-2 cursor-pointer transition-colors ${form.mode === 'B' ? 'border-apple-blue bg-apple-blue-light' : 'border-apple-gray-100 hover:border-apple-gray-200'}`}>
-                  <input type="radio" name="mode" value="B" checked={form.mode === 'B'} onChange={() => { hapticSelect(); setForm(f => ({ ...f, mode: 'B' })) }} className="mt-1 w-4 h-4 text-apple-blue" />
-                  <div>
-                    <span className="text-sm font-semibold text-apple-gray-900">Mode B</span>
-                    <p className="text-xs text-apple-gray-500 mt-0.5">完整主动攻击 — PROBE → BOUNDARY → ATTACK（含 live 攻击，更全面）</p>
-                  </div>
-                </label>
-              </div>
+                </details>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -403,16 +365,12 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
             </div>
 
             <div className="p-4 rounded-apple bg-apple-gray-50 border border-apple-gray-100">
-              <p className="text-xs font-semibold text-apple-gray-600 mb-2">LLM Backend</p>
-              {form.llm_backend === 'claude' ? (
-                <p className="text-sm text-apple-gray-700">Claude (Anthropic API) — server needs <code className="text-[11px] bg-apple-gray-100 px-1 rounded">ANTHROPIC_API_KEY</code></p>
-              ) : (
-                <div className="space-y-1">
-                  <p className="text-sm text-apple-gray-700">vLLM / SLM (OpenAI-compatible)</p>
-                  <p className="text-xs text-apple-gray-500 font-mono">{form.vllm_base_url || 'http://127.0.0.1:8000'}</p>
-                  <p className="text-xs text-apple-gray-500 font-mono">{form.vllm_model || 'meta-llama/Meta-Llama-3-70B-Instruct'}</p>
-                </div>
-              )}
+              <p className="text-xs font-semibold text-apple-gray-600 mb-1">LLM Backend</p>
+              <p className="text-sm text-apple-gray-700">
+                {form.llm_backend === 'claude'
+                  ? 'Claude (Anthropic API)'
+                  : `vLLM / SLM — ${form.vllm_base_url || 'http://127.0.0.1:8000'}`}
+              </p>
             </div>
 
             <div className="p-4 rounded-apple bg-apple-gray-50 border border-apple-gray-100">
