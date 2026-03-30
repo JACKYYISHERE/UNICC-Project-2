@@ -18,6 +18,17 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# Load API keys from expert3_rag/env if not already in environment
+import os as _os
+_env_file = BASE_DIR / "expert3_rag" / "env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            if not _os.environ.get(_k.strip()):
+                _os.environ[_k.strip()] = _v.strip()
+
 from council.audit import (
     list_events as audit_list_events,
     list_spans as audit_list_spans,
