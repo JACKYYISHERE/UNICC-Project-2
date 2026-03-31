@@ -12,9 +12,10 @@ interface Props {
   onStepChange: (step: ReportStep) => void
   evaluation?: DetailedEvaluation | null
   councilReport?: CouncilReportResponse | null
+  onViewFull?: () => void
 }
 
-const Report: FC<Props> = ({ evaluationId, step, onStepChange, evaluation, councilReport }) => {
+const Report: FC<Props> = ({ evaluationId, step, onStepChange, evaluation, councilReport, onViewFull }) => {
   const evalData = evaluation ?? (evaluationId === detailedEval.agent_id ? detailedEval : null)
   const expert1Report = councilReport?.expert_reports?.security ?? null
   if (!evalData) {
@@ -32,6 +33,7 @@ const Report: FC<Props> = ({ evaluationId, step, onStepChange, evaluation, counc
         currentStep={step}
         onStep={onStepChange}
         expert1Report={expert1Report ?? undefined}
+        onViewFull={onViewFull}
       />
     )
   }

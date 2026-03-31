@@ -103,7 +103,8 @@ const FinalReport: FC<Props> = ({ evaluation }) => {
               <div className="grid grid-cols-2 gap-2 mb-4">
                 {r.scores.map(s => {
                   const pct = (s.value / s.max) * 100
-                  const color = pct >= 80 ? 'bg-apple-green' : pct >= 50 ? 'bg-apple-blue' : pct >= 30 ? 'bg-apple-orange' : 'bg-apple-red'
+                  // 1=low risk (green) → 5=high risk (red)
+                  const color = pct <= 20 ? 'bg-apple-green' : pct <= 60 ? 'bg-apple-orange' : 'bg-apple-red'
                   return (
                     <div key={s.label} className="flex items-center gap-2">
                       <span className="text-xs text-apple-gray-600 shrink-0 w-32">{s.label}</span>
@@ -116,14 +117,56 @@ const FinalReport: FC<Props> = ({ evaluation }) => {
                 })}
               </div>
 
-              <p className="section-label mb-2">Findings (Evidence)</p>
-              <ul className="space-y-2 mb-4">
-                {r.findings.map((f, i) => (
-                  <li key={i} className="flex gap-2 text-sm text-apple-gray-700">
-                    <span className="text-apple-red shrink-0">•</span>
-                    <span>{f}</span>
-                  </li>
-                ))}
+              <p className="section-label mb-2">Key Findings</p>
+              <ul className="space-y-3 mb-4">
+                {r.findings.map((f, i) => {
+                  const isAudit = f.includes('[RISK]') && f.includes('[EVIDENCE]')
+                  if (isAudit) {
+                    const extract = (tag: string, next: string) => {
+                      const re = new RegExp(`\\[${tag}\\]\\s*(.*?)(?=\\[${next}\\]|$)`, 's')
+                      return f.match(re)?.[1]?.trim() ?? ''
+                    }
+                    const risk  = extract('RISK',     'EVIDENCE')
+                    const evid  = extract('EVIDENCE', 'IMPACT')
+                    const imp   = extract('IMPACT',   'SCORE')
+                    const score = extract('SCORE',    '$')
+                    return (
+                      <li key={i} className="rounded-apple border border-apple-gray-100 bg-apple-gray-50 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-apple-gray-100 border-b border-apple-gray-100">
+                          <span className="text-[10px] font-bold text-apple-gray-400 uppercase tracking-wider">Finding {i + 1}</span>
+                        </div>
+                        <div className="p-3 space-y-2">
+                          <div className="flex gap-2 items-start">
+                            <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-apple-red-bg text-apple-red uppercase tracking-wide mt-0.5 border border-apple-red/20">Risk</span>
+                            <p className="text-xs font-medium text-apple-gray-800 leading-relaxed">{risk}</p>
+                          </div>
+                          <div className="flex gap-2 items-start">
+                            <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 uppercase tracking-wide mt-0.5 border border-blue-100">Evidence</span>
+                            <p className="text-xs text-apple-gray-600 leading-relaxed">{evid}</p>
+                          </div>
+                          {imp && (
+                            <div className="flex gap-2 items-start">
+                              <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-50 text-orange-600 uppercase tracking-wide mt-0.5 border border-orange-100">Impact</span>
+                              <p className="text-xs text-apple-gray-600 leading-relaxed">{imp}</p>
+                            </div>
+                          )}
+                          {score && (
+                            <div className="flex gap-2 items-start">
+                              <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 uppercase tracking-wide mt-0.5 border border-purple-100">Score</span>
+                              <p className="text-xs text-apple-gray-500 leading-relaxed italic">{score}</p>
+                            </div>
+                          )}
+                        </div>
+                      </li>
+                    )
+                  }
+                  return (
+                    <li key={i} className="flex gap-2 text-sm text-apple-gray-700">
+                      <span className="text-apple-red shrink-0 mt-0.5">•</span>
+                      <span className="text-xs leading-relaxed">{f}</span>
+                    </li>
+                  )
+                })}
               </ul>
 
               <p className="section-label mb-2">Regulatory / Framework References</p>
