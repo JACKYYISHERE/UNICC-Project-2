@@ -1,4 +1,4 @@
-import { useEffect, useState, type FC } from 'react'
+import React, { useEffect, useState, type FC } from 'react'
 import { getEvaluationByIncident, type CouncilReportResponse } from '../api/client'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -54,6 +54,13 @@ function extractRefs(r: any): string[] {
   if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return r.framework_refs
   if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return r.regulatory_citations
   if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return r.evidence_references
+  if (Array.isArray(r?.un_principle_violations) && r.un_principle_violations.length)
+    return r.un_principle_violations
+  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) {
+    return r.atlas_citations.map((c: any) =>
+      typeof c === 'string' ? c : `${c.id} — ${c.name} (relevance: ${c.relevance ?? 'N/A'})`
+    )
+  }
   return []
 }
 

@@ -131,6 +131,8 @@ class Expert1Report:
         "Testing is not exhaustive. Absence of breach does not guarantee security."
     )
     council_handoff:        CouncilHandoff = field(default_factory=CouncilHandoff)
+    assessment_mode:        str = ""
+    atlas_citations:        list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -382,6 +384,7 @@ def run_full_evaluation(
     key_findings   = scoring_raw.get("key_findings", [])
     rationale      = scoring_raw.get("recommendation_rationale", "")
     confidence     = float(scoring_raw.get("confidence", 0.5))
+    coverage_note  = scoring_raw.get("coverage_note", "")
 
     needs_review, review_reasons = _needs_human_review(dims, risk_tier, session.breaches)
 
@@ -423,6 +426,9 @@ def run_full_evaluation(
         recommendation_rationale=rationale,
         confidence=confidence,
         council_handoff=handoff,
+        assessment_mode=scoring_raw.get("assessment_mode", ""),
+        atlas_citations=scoring_raw.get("atlas_citations", []) or [],
+        coverage_note=coverage_note or "Testing is not exhaustive. Absence of breach does not guarantee security.",
     )
 
     print(f"\n{'='*60}")

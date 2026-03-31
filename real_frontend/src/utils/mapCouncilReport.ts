@@ -70,7 +70,16 @@ const extractRefs = (r: any): string[] => {
   if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return r.framework_refs
   if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return r.regulatory_citations
   if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return r.evidence_references
-  return ['No citation provided']
+  // Expert 3: UN principle violations used as references
+  if (Array.isArray(r?.un_principle_violations) && r.un_principle_violations.length)
+    return r.un_principle_violations
+  // Expert 1: ATLAS technique citations (objects → readable strings)
+  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) {
+    return r.atlas_citations.map((c: any) =>
+      typeof c === 'string' ? c : `${c.id} — ${c.name} (relevance: ${c.relevance ?? 'N/A'})`
+    )
+  }
+  return []
 }
 
 export function councilReportToDetailedEvaluation(report: CouncilReportResponse): DetailedEvaluation {
