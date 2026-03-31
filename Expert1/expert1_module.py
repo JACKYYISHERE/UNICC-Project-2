@@ -579,16 +579,17 @@ def run_full_evaluation(
         for e in session.attack_log
     ]
 
+    # Count tests from the correct suite that was actually run
+    _suite_len = (
+        len(PETRI_STANDARD_SUITE) if (run_standard and _is_transcript_judge(adapter))
+        else len(STANDARD_SUITE)  if run_standard
+        else 0
+    )
+
     report = Expert1Report(
         expert="security_adversarial",
         agent_id=profile.agent_id,
         session_id=session_id,
-        # Count tests from the correct suite that was actually run
-        _suite_len = (
-            len(PETRI_STANDARD_SUITE) if (run_standard and _is_transcript_judge(adapter))
-            else len(STANDARD_SUITE)   if run_standard
-            else 0
-        )
         test_coverage=TestCoverage(
             attack_techniques_tested=session.techniques_tested,
             standard_suite_completed=run_standard,
