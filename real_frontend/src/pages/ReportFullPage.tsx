@@ -167,6 +167,163 @@ const EXPERT_META = [
   { key: 'un_mission_fit', icon: '🌐', label: 'UN Mission Fit & Human Rights',       accent: 'border-sky-200 bg-sky-50/40' },
 ]
 
+// ── Full-page attack trail (ReportFullPage) ───────────────────────────────────
+const FullPageAttackTrail: FC<{ report: any }> = ({ report }) => {
+  const [open, setOpen] = React.useState(false)
+
+  const attackTurns   = (report?.attack_trace   ?? []) as any[]
+  const breachDetails = (report?.breach_details  ?? []) as any[]
+  const probeTurns    = (report?.probe_trace     ?? []) as any[]
+  const suiteTurns    = (report?.standard_suite_results?.all_results ?? []) as any[]
+  const breachTurns   = attackTurns.filter((t: any) => t.classification === 'BREACH')
+
+  return (
+    <div className="border-t border-black/5 bg-white/40">
+      <button
+        className="w-full flex items-center justify-between px-6 py-4 hover:bg-black/5 transition-colors"
+        onClick={() => setOpen(o => !o)}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">Live Attack Trail</span>
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200 uppercase">Live Mode</span>
+          {breachTurns.length > 0 && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 uppercase">
+              {breachTurns.length} BREACH{breachTurns.length > 1 ? 'ES' : ''}
+            </span>
+          )}
+          <span className="text-[10px] text-gray-400">
+            {probeTurns.length} probe · {attackTurns.length} attack · {suiteTurns.length} suite tests
+          </span>
+        </div>
+        <span className="text-[11px] text-blue-500">{open ? '▲ Collapse' : '▼ Expand'}</span>
+      </button>
+
+      {open && (
+        <div className="px-6 pb-8 space-y-8">
+
+          {/* LLM-structured breach records */}
+          {breachDetails.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">Breach Records</p>
+              <div className="space-y-3">
+                {breachDetails.map((bd: any, i: number) => (
+                  <div key={i} className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded text-white uppercase
+                        ${bd.severity === 'CRITICAL' ? 'bg-red-700' : bd.severity === 'HIGH' ? 'bg-red-500' : 'bg-orange-400'}`}>
+                        {bd.severity ?? 'HIGH'} BREACH
+                      </span>
+                      <span className="text-xs font-semibold text-red-800">{bd.technique_id} — {bd.technique_name}</span>
+                      <span className="text-[10px] text-red-400 ml-auto">Turn {bd.turn}</span>
+                    </div>
+                    <p className="text-xs text-red-700"><span className="font-semibold">Vector:</span> {bd.attack_vector}</p>
+                    <p className="text-xs text-red-600"><span className="font-semibold">Type:</span> {bd.breach_type?.replace(/_/g, ' ')}</p>
+                    {(bd.attack_message_excerpt || bd.response_excerpt) && (
+                      <div className="grid grid-cols-2 gap-3 mt-2">
+                        {bd.attack_message_excerpt && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase text-gray-400 mb-1">Attack</p>
+                            <p className="text-[11px] font-mono text-gray-700 bg-white rounded-lg px-3 py-2 border border-gray-100 leading-relaxed">
+                              {bd.attack_message_excerpt}
+                            </p>
+                          </div>
+                        )}
+                        {bd.response_excerpt && (
+                          <div>
+                            <p className="text-[9px] font-bold uppercase text-gray-400 mb-1">Response</p>
+                            <p className="text-[11px] font-mono text-red-800 bg-red-50 rounded-lg px-3 py-2 border border-red-100 leading-relaxed">
+                              {bd.response_excerpt}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Attack turn timeline */}
+          {attackTurns.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Phase 3 Attack Timeline · {attackTurns.length} turns
+              </p>
+              <div className="space-y-3">
+                {attackTurns.map((t: any, i: number) => {
+                  const isBreach = t.classification === 'BREACH'
+                  return (
+                    <div key={i} className={`rounded-xl border p-4 grid grid-cols-2 gap-4
+                      ${isBreach ? 'border-red-200 bg-red-50/50' : 'border-gray-200 bg-white'}`}>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-mono text-gray-400">Turn {t.turn}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide
+                            ${isBreach ? 'bg-red-100 text-red-700 border-red-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                            {t.classification}
+                          </span>
+                          <span className="text-[10px] font-mono text-gray-400">{t.technique_id}</span>
+                          {t.score > 0 && (
+                            <span className={`text-[10px] font-bold ml-auto
+                              ${t.score >= 7 ? 'text-red-600' : t.score >= 4 ? 'text-orange-500' : 'text-green-600'}`}>
+                              Score {t.score}/10
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Attack</p>
+                        <p className="text-[11px] font-mono text-gray-700 bg-gray-50 rounded-lg px-3 py-2 border border-gray-100 leading-relaxed">
+                          {t.message_sent}
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Response</p>
+                        <p className={`text-[11px] font-mono rounded-lg px-3 py-2 border leading-relaxed
+                          ${isBreach ? 'text-red-800 bg-red-50 border-red-100' : 'text-green-800 bg-green-50 border-green-100'}`}>
+                          {t.response}
+                        </p>
+                        {t.evidence && (
+                          <p className="text-[10px] text-gray-400 italic">{t.evidence}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Standard Suite summary grid */}
+          {suiteTurns.length > 0 && (
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Standard Suite · {suiteTurns.length} tests
+              </p>
+              <div className="grid grid-cols-5 gap-2">
+                {['B1_bias', 'B2_harmful', 'B3_privacy', 'B4_transparency', 'B5_un_specific'].map(cat => {
+                  const tests = suiteTurns.filter((t: any) => t.category === cat)
+                  const res = tests.every((t: any) => t.result === 'PASS') ? 'PASS'
+                    : tests.some((t: any) => t.result === 'FAIL') ? 'FAIL' : 'PARTIAL'
+                  return (
+                    <div key={cat} className={`rounded-xl p-3 text-center border
+                      ${res === 'PASS' ? 'bg-green-50 border-green-200' : res === 'FAIL' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-gray-600">{cat.replace('_', ' ')}</p>
+                      <p className={`text-[11px] font-bold mt-1
+                        ${res === 'PASS' ? 'text-green-700' : res === 'FAIL' ? 'text-red-700' : 'text-yellow-700'}`}>
+                        {res}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ExpertSection: FC<{ expertKey: string; report: any }> = ({ expertKey, report }) => {
   const meta     = EXPERT_META.find(m => m.key === expertKey) ?? EXPERT_META[0]
   const scores   = scoreEntries(report)
@@ -231,12 +388,22 @@ const ExpertSection: FC<{ expertKey: string; report: any }> = ({ expertKey, repo
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4">
             Key Findings · {findings.length}
+            {expertKey === 'security' && Array.isArray(report?.attack_trace) && report.attack_trace.length > 0 && (
+              <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200 uppercase tracking-wide">
+                Live Mode
+              </span>
+            )}
           </p>
           <div className="space-y-3 max-h-[620px] overflow-y-auto pr-1">
             {findings.map((f, i) => <FindingCard key={i} text={f} index={i} />)}
           </div>
         </div>
       </div>
+
+      {/* Live Attack Trail — Expert 1 only */}
+      {expertKey === 'security' && Array.isArray(report?.attack_trace) && report.attack_trace.length > 0 && (
+        <FullPageAttackTrail report={report} />
+      )}
     </section>
   )
 }

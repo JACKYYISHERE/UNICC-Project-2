@@ -1,9 +1,172 @@
 import { type FC, useState } from 'react'
-import { detailedEval, type DetailedEvaluation } from '../data/mockData'
+import { detailedEval, type DetailedEvaluation, type ExpertReport, type AttackTurn } from '../data/mockData'
 import { RecBadge, ConsensusBadge } from '../components/Badge'
 import { hapticButton } from '../utils/haptic'
 import { evaluationToMarkdown } from '../utils/reportToMarkdown'
 import { downloadEvaluationPdf } from '../api/client'
+
+// ── Live Attack Evidence block (embeds inside Expert 1 section) ───────────────
+const LiveAttackEvidence: FC<{ report: ExpertReport }> = ({ report }) => {
+  const [open, setOpen] = useState(false)
+
+  const breachTurns    = (report.attack_trace ?? []).filter(t => t.classification === 'BREACH')
+  const allTurns       = report.attack_trace ?? []
+  const breachDetails  = report.breach_details ?? []
+  const probeCount     = report.probe_trace?.length ?? 0
+  const boundaryCount  = report.boundary_trace?.length ?? 0
+  const suiteCount     = report.standard_suite?.length ?? 0
+
+  return (
+    <div className="mt-4 border-t border-apple-gray-100 pt-4">
+      <button
+        className="w-full flex items-center justify-between text-left"
+        onClick={() => setOpen(o => !o)}
+      >
+        <div className="flex items-center gap-2">
+          <span className="section-label mb-0">Live Attack Evidence</span>
+          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200 uppercase tracking-wide">
+            Live Mode
+          </span>
+          {breachTurns.length > 0 && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200 uppercase tracking-wide">
+              {breachTurns.length} BREACH{breachTurns.length > 1 ? 'ES' : ''}
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] text-apple-blue">{open ? '▲ Collapse' : '▼ Expand'}</span>
+      </button>
+
+      {/* Phase counter summary — always visible */}
+      <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-apple-gray-500">
+        <span>🔍 {probeCount} probe turns</span>
+        <span>⚠️ {boundaryCount} boundary tests</span>
+        <span>⚡ {allTurns.length} attack turns</span>
+        <span>🧪 {suiteCount} standard suite tests</span>
+      </div>
+
+      {open && (
+        <div className="mt-4 space-y-4">
+
+          {/* Structured breach details from LLM */}
+          {breachDetails.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold text-apple-gray-500 uppercase tracking-wider mb-2">Breach Records</p>
+              <div className="space-y-3">
+                {breachDetails.map((bd, i) => (
+                  <div key={i} className="rounded-apple border border-red-200 bg-red-50 p-3 space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded text-white uppercase tracking-wide
+                        ${bd.severity === 'CRITICAL' ? 'bg-red-700' : bd.severity === 'HIGH' ? 'bg-red-500' : 'bg-orange-500'}`}>
+                        {bd.severity ?? 'HIGH'} BREACH
+                      </span>
+                      <span className="text-[11px] font-semibold text-red-800">
+                        {bd.technique_id} — {bd.technique_name}
+                      </span>
+                      <span className="text-[10px] text-red-400 ml-auto">Turn {bd.turn}</span>
+                    </div>
+                    <p className="text-xs text-red-700">
+                      <span className="font-semibold">Vector:</span> {bd.attack_vector}
+                    </p>
+                    <p className="text-xs text-red-600">
+                      <span className="font-semibold">Type:</span> {bd.breach_type?.replace(/_/g, ' ')}
+                    </p>
+                    {(bd.attack_message_excerpt || bd.response_excerpt) && (
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        {bd.attack_message_excerpt && (
+                          <div>
+                            <p className="text-[9px] font-bold text-apple-gray-500 uppercase mb-1">Attack</p>
+                            <p className="text-[11px] font-mono text-apple-gray-700 bg-white rounded px-2 py-1.5 border border-apple-gray-100 leading-relaxed">
+                              {bd.attack_message_excerpt}
+                            </p>
+                          </div>
+                        )}
+                        {bd.response_excerpt && (
+                          <div>
+                            <p className="text-[9px] font-bold text-apple-gray-500 uppercase mb-1">Response</p>
+                            <p className="text-[11px] font-mono text-red-800 bg-red-50 rounded px-2 py-1.5 border border-red-100 leading-relaxed">
+                              {bd.response_excerpt}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Full attack turn timeline */}
+          <div>
+            <p className="text-[11px] font-bold text-apple-gray-500 uppercase tracking-wider mb-2">
+              Phase 3 — Attack Timeline ({allTurns.length} turns)
+            </p>
+            <div className="space-y-2">
+              {allTurns.map((t: AttackTurn, i: number) => {
+                const isBreach = t.classification === 'BREACH'
+                return (
+                  <div key={i} className={`rounded-apple border p-3 grid grid-cols-2 gap-3 text-xs
+                    ${isBreach ? 'border-red-200 bg-red-50' : 'border-apple-gray-100 bg-apple-gray-50'}`}>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10px] font-mono text-apple-gray-400">Turn {t.turn}</span>
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide
+                          ${isBreach ? 'bg-red-100 text-red-700 border-red-200' : 'bg-green-100 text-green-700 border-green-200'}`}>
+                          {t.classification}
+                        </span>
+                        <span className="text-[10px] font-mono text-apple-gray-500 ml-auto">{t.technique_id}</span>
+                      </div>
+                      <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Attack</p>
+                      <p className="font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 leading-relaxed line-clamp-3 text-[11px]">
+                        {t.message_sent}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Response</p>
+                      <p className={`font-mono rounded px-2 py-1 border leading-relaxed line-clamp-3 text-[11px]
+                        ${isBreach ? 'text-red-800 bg-red-50 border-red-100' : 'text-green-800 bg-green-50 border-green-100'}`}>
+                        {t.response}
+                      </p>
+                      {t.evidence && (
+                        <p className="text-[10px] text-apple-gray-500 italic">{t.evidence}</p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Standard Suite summary */}
+          {(report.standard_suite ?? []).length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold text-apple-gray-500 uppercase tracking-wider mb-2">
+                Standard Suite — {report.standard_suite!.length} tests
+              </p>
+              <div className="grid grid-cols-5 gap-1">
+                {['B1_bias', 'B2_harmful', 'B3_privacy', 'B4_transparency', 'B5_un_specific'].map(cat => {
+                  const tests = (report.standard_suite ?? []).filter(t => t.category === cat)
+                  const result = tests.every(t => t.result === 'PASS') ? 'PASS'
+                    : tests.some(t => t.result === 'FAIL') ? 'FAIL' : 'PARTIAL'
+                  return (
+                    <div key={cat} className={`rounded p-2 text-center border
+                      ${result === 'PASS' ? 'bg-green-50 border-green-200' : result === 'FAIL' ? 'bg-red-50 border-red-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                      <p className="text-[9px] font-bold uppercase tracking-wide text-apple-gray-600">{cat.replace('_', ' ')}</p>
+                      <p className={`text-[10px] font-bold mt-0.5 ${result === 'PASS' ? 'text-green-700' : result === 'FAIL' ? 'text-red-700' : 'text-yellow-700'}`}>
+                        {result}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 interface Props { evaluation?: DetailedEvaluation | null }
 
@@ -175,6 +338,11 @@ const FinalReport: FC<Props> = ({ evaluation }) => {
                   <span key={i} className="px-2 py-1 rounded bg-apple-gray-100 text-[11px] text-apple-gray-600">{ref}</span>
                 ))}
               </div>
+
+              {/* Live Attack Evidence — only for Expert 1 in live mode */}
+              {r.id === 'security' && r.attack_trace && r.attack_trace.length > 0 && (
+                <LiveAttackEvidence report={r} />
+              )}
             </div>
           ))}
         </div>
