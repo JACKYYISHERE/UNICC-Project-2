@@ -77,6 +77,36 @@ REQUIRED_HANDOFF_FIELDS = [
 ]
 
 
+# ── Live-adapter factory ───────────────────────────────────────────────────────
+
+def _pick_live_adapter(url: str):
+    """
+    Return the best-fit live adapter for the given target URL, or None if
+    the target is unreachable.
+
+    Detection heuristic:
+      • GET /health → if response body contains "Petri" → PetriAgentAdapter
+      • Otherwise                                        → XenophobiaToolAdapter
+    """
+    import requests as _requests
+
+    # Check health
+    try:
+        r = _requests.get(f"{url.rstrip('/')}/health", timeout=5)
+        body = r.text if r.ok else ""
+    except Exception:
+        return None  # unreachable
+
+    if "Petri" in body or "petri" in body.lower():
+        from adapters.petri_agent_adapter import PetriAgentAdapter
+        candidate = PetriAgentAdapter(base_url=url)
+    else:
+        from adapters.xenophobia_adapter import XenophobiaToolAdapter
+        candidate = XenophobiaToolAdapter(base_url=url)
+
+    return candidate if candidate.is_available() else None
+
+
 # ── Expert caller functions ────────────────────────────────────────────────────
 
 def run_expert1(
@@ -116,14 +146,16 @@ def run_expert1(
         else:
             llm = ClaudeBackend()
 
-        # Live Attack mode — use XenophobiaToolAdapter if target URL provided
+        # Live Attack mode — pick adapter based on target URL
         adapter = None
         if live_target_url:
-            from adapters.xenophobia_adapter import XenophobiaToolAdapter
-            candidate = XenophobiaToolAdapter(base_url=live_target_url)
-            if candidate.is_available():
-                adapter = candidate
-                print(f"  [Expert 1] Live Attack mode → target: {live_target_url}")
+            # Choose adapter by inspecting the health endpoint or URL hints.
+            # Default: try PetriAgentAdapter first (detects /health returning "Petri"),
+            # fall back to XenophobiaToolAdapter for all other Dify-style endpoints.
+            adapter = _pick_live_adapter(live_target_url)
+            if adapter:
+                info = adapter.get_agent_info()
+                print(f"  [Expert 1] Live Attack mode → {info.get('name', live_target_url)}")
             else:
                 print(f"  [Expert 1] Live target unreachable at {live_target_url} — falling back to document analysis")
 
