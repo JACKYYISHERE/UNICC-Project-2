@@ -1,5 +1,5 @@
 import { type FC, useState, useCallback } from 'react'
-import { detailedEval, type DetailedEvaluation, type ExpertReport } from '../data/mockData'
+import { detailedEval, type DetailedEvaluation, type ExpertReport, type AttackTurn, type ProbeTurn, type BoundaryTurn, type BreachDetail } from '../data/mockData'
 import { RecBadge } from '../components/Badge'
 import { hapticSelect } from '../utils/haptic'
 import { getEvaluationAudit, type AuditEvent, type AuditSpan } from '../api/client'
@@ -21,6 +21,230 @@ const ScoreRow: FC<{ label: string; value: number; max: number }> = ({ label, va
     </div>
   )
 }
+
+// ── Classification chip ───────────────────────────────────────────────────────
+const ClassChip: FC<{ cls: string }> = ({ cls }) => {
+  const upper = cls.toUpperCase()
+  const style =
+    upper === 'BREACH'           ? 'bg-red-100 text-red-700 border-red-200' :
+    upper === 'UNSAFE_FAILURE'   ? 'bg-orange-100 text-orange-700 border-orange-200' :
+    upper === 'SAFE_FAILURE'     ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+    upper === 'FUNCTIONAL'       ? 'bg-green-100 text-green-700 border-green-200' :
+    upper === 'PASS'             ? 'bg-green-100 text-green-700 border-green-200' :
+    upper === 'PARTIAL'          ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+    upper === 'FAIL'             ? 'bg-red-100 text-red-700 border-red-200' :
+                                   'bg-apple-gray-100 text-apple-gray-600 border-apple-gray-200'
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 uppercase tracking-wide ${style}`}>
+      {cls}
+    </span>
+  )
+}
+
+// ── Live Attack Trail panel ───────────────────────────────────────────────────
+const AttackTrailPanel: FC<{ report: ExpertReport }> = ({ report }) => {
+  const [tab, setTab] = useState<'breach' | 'probe' | 'boundary' | 'attack' | 'suite'>('breach')
+
+  const hasLiveData = report.attack_trace && report.attack_trace.length > 0
+  if (!hasLiveData) return null
+
+  const breaches  = (report.attack_trace ?? []).filter(t => t.classification === 'BREACH')
+  const allAttack = report.attack_trace ?? []
+  const probe     = report.probe_trace ?? []
+  const boundary  = report.boundary_trace ?? []
+  const suite     = report.standard_suite ?? []
+  const breachDetails = report.breach_details ?? []
+
+  const tabs: { id: typeof tab; label: string; count?: number }[] = [
+    { id: 'breach',   label: '🔴 Breaches',        count: breaches.length },
+    { id: 'probe',    label: '🔍 Phase 1 Probe',    count: probe.length },
+    { id: 'boundary', label: '⚠️ Phase 2 Boundary', count: boundary.length },
+    { id: 'attack',   label: '⚡ Phase 3 Attack',   count: allAttack.length },
+    { id: 'suite',    label: '🧪 Standard Suite',   count: suite.length },
+  ]
+
+  return (
+    <div className="mt-6 border-t border-apple-gray-100 pt-5">
+      <p className="section-label mb-3">Live Attack Trail</p>
+
+      {/* Breach Details (LLM-structured) */}
+      {breachDetails.length > 0 && (
+        <div className="mb-4 space-y-2">
+          {breachDetails.map((bd, i) => (
+            <div key={i} className="rounded-apple border border-red-200 bg-red-50 p-3 space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-600 text-white uppercase tracking-wide">
+                  {bd.severity ?? 'HIGH'} BREACH
+                </span>
+                <span className="text-[11px] font-semibold text-red-800">{bd.technique_id} — {bd.technique_name}</span>
+                <span className="text-[10px] text-red-500 ml-auto">Turn {bd.turn}</span>
+              </div>
+              <p className="text-xs text-red-700"><span className="font-semibold">Vector:</span> {bd.attack_vector}</p>
+              <p className="text-xs text-red-600"><span className="font-semibold">Type:</span> {bd.breach_type?.replace(/_/g,' ')}</p>
+              {bd.attack_message_excerpt && (
+                <div className="mt-1 space-y-1">
+                  <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Attack →</p>
+                  <p className="text-xs font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 leading-relaxed">
+                    {bd.attack_message_excerpt}
+                  </p>
+                </div>
+              )}
+              {bd.response_excerpt && (
+                <div className="space-y-1">
+                  <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Response →</p>
+                  <p className="text-xs font-mono text-green-800 bg-green-50 rounded px-2 py-1 border border-green-100 leading-relaxed">
+                    {bd.response_excerpt}
+                  </p>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Phase tabs */}
+      <div className="flex gap-1 flex-wrap mb-3">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => { hapticSelect(); setTab(t.id) }}
+            className={`text-[10px] px-2.5 py-1 rounded-full border transition-colors font-medium
+              ${tab === t.id
+                ? 'bg-apple-gray-900 text-white border-apple-gray-900'
+                : 'bg-white text-apple-gray-600 border-apple-gray-200 hover:border-apple-gray-400'}`}
+          >
+            {t.label} {t.count != null && t.count > 0 ? `(${t.count})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {/* Phase content */}
+      <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+
+        {tab === 'breach' && (
+          breaches.length === 0
+            ? <p className="text-xs text-apple-gray-400 italic">No confirmed breaches in this session.</p>
+            : breaches.map((t, i) => (
+              <TurnCard key={i} turn={t} highlight />
+            ))
+        )}
+
+        {tab === 'probe' && (
+          probe.length === 0
+            ? <p className="text-xs text-apple-gray-400 italic">No probe data available.</p>
+            : probe.map((t, i) => <ProbeCard key={i} turn={t} />)
+        )}
+
+        {tab === 'boundary' && (
+          boundary.length === 0
+            ? <p className="text-xs text-apple-gray-400 italic">No boundary data available.</p>
+            : boundary.map((t, i) => <BoundaryCard key={i} turn={t} />)
+        )}
+
+        {tab === 'attack' && (
+          allAttack.length === 0
+            ? <p className="text-xs text-apple-gray-400 italic">No attack turns available.</p>
+            : allAttack.map((t, i) => <TurnCard key={i} turn={t} highlight={t.classification === 'BREACH'} />)
+        )}
+
+        {tab === 'suite' && (
+          suite.length === 0
+            ? <p className="text-xs text-apple-gray-400 italic">Standard suite not run.</p>
+            : suite.map((t, i) => <SuiteCard key={i} test={t} />)
+        )}
+      </div>
+    </div>
+  )
+}
+
+const TurnCard: FC<{ turn: AttackTurn; highlight?: boolean }> = ({ turn, highlight }) => (
+  <div className={`rounded-apple border p-2.5 space-y-1.5 text-xs
+    ${highlight ? 'border-red-200 bg-red-50' : 'border-apple-gray-100 bg-apple-gray-50'}`}>
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-[10px] font-mono text-apple-gray-500 shrink-0">Turn {turn.turn}</span>
+      <ClassChip cls={turn.classification} />
+      <span className="text-[10px] text-apple-gray-500 font-mono">{turn.technique_id}</span>
+      {turn.score > 0 && (
+        <span className={`text-[10px] font-bold ml-auto ${turn.score >= 7 ? 'text-red-600' : turn.score >= 4 ? 'text-orange-500' : 'text-green-600'}`}>
+          Score {turn.score}/10
+        </span>
+      )}
+    </div>
+    <div className="space-y-1">
+      <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Attack message</p>
+      <p className="font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 leading-relaxed line-clamp-3">
+        {turn.message_sent}
+      </p>
+    </div>
+    <div className="space-y-1">
+      <p className="text-[10px] text-apple-gray-500 font-semibold uppercase tracking-wide">Target response</p>
+      <p className={`font-mono rounded px-2 py-1 border leading-relaxed line-clamp-3
+        ${highlight ? 'text-red-800 bg-red-50 border-red-100' : 'text-green-800 bg-green-50 border-green-100'}`}>
+        {turn.response}
+      </p>
+    </div>
+    {turn.evidence && (
+      <p className="text-[10px] text-apple-gray-500 italic border-t border-apple-gray-100 pt-1">{turn.evidence}</p>
+    )}
+  </div>
+)
+
+const ProbeCard: FC<{ turn: ProbeTurn }> = ({ turn }) => (
+  <div className="rounded-apple border border-apple-gray-100 bg-apple-gray-50 p-2.5 space-y-1.5 text-xs">
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-mono text-apple-gray-400">{turn.id}</span>
+      <ClassChip cls={turn.classification} />
+      <span className="text-[10px] text-apple-gray-500">{turn.category}</span>
+    </div>
+    <p className="text-apple-gray-600 italic text-[10px]">{turn.what_we_are_testing}</p>
+    <p className="font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 line-clamp-2">
+      {turn.message}
+    </p>
+    <p className="font-mono text-green-800 bg-green-50 rounded px-2 py-1 border border-green-100 line-clamp-2">
+      {turn.response}
+    </p>
+  </div>
+)
+
+const BoundaryCard: FC<{ turn: BoundaryTurn }> = ({ turn }) => (
+  <div className={`rounded-apple border p-2.5 space-y-1.5 text-xs
+    ${turn.classification === 'UNSAFE_FAILURE' ? 'border-orange-200 bg-orange-50' : 'border-apple-gray-100 bg-apple-gray-50'}`}>
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-mono text-apple-gray-400">{turn.id}</span>
+      <ClassChip cls={turn.classification} />
+      <span className="text-[10px] text-apple-gray-500">{turn.boundary_type?.replace(/_/g,' ')}</span>
+    </div>
+    <p className="font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 line-clamp-2">
+      {turn.message}
+    </p>
+    <p className="font-mono text-green-800 bg-green-50 rounded px-2 py-1 border border-green-100 line-clamp-2">
+      {turn.response}
+    </p>
+    {turn.failure_indicator && (
+      <p className="text-[10px] text-orange-600 italic">{turn.failure_indicator}</p>
+    )}
+  </div>
+)
+
+const SuiteCard: FC<{ test: { id: string; category: string; result: string; message: string; response: string; failure_notes: string } }> = ({ test }) => (
+  <div className={`rounded-apple border p-2.5 space-y-1.5 text-xs
+    ${test.result === 'FAIL' ? 'border-red-200 bg-red-50' : test.result === 'PARTIAL' ? 'border-yellow-200 bg-yellow-50' : 'border-green-200 bg-green-50'}`}>
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] font-mono text-apple-gray-500">{test.id}</span>
+      <ClassChip cls={test.result} />
+      <span className="text-[10px] text-apple-gray-500">{test.category}</span>
+    </div>
+    <p className="font-mono text-apple-gray-700 bg-white rounded px-2 py-1 border border-apple-gray-100 line-clamp-2">
+      {test.message}
+    </p>
+    <p className="font-mono text-green-800 bg-green-50 rounded px-2 py-1 border border-green-100 line-clamp-2">
+      {test.response}
+    </p>
+    {test.failure_notes && (
+      <p className="text-[10px] text-apple-gray-500 italic">{test.failure_notes}</p>
+    )}
+  </div>
+)
 
 // ── Expert card ───────────────────────────────────────────────────────────────
 const ExpertCard: FC<{ report: ExpertReport; active: boolean; onClick: () => void }> = ({ report, active, onClick }) => (
@@ -260,7 +484,14 @@ const ExpertAnalysis: FC<Props> = ({ evaluation }) => {
           {/* Findings + refs */}
           <div className="space-y-6">
             <div>
-              <p className="section-label">Key Findings</p>
+              <p className="section-label">
+                Key Findings
+                {active.id === 'security' && active.attack_trace && active.attack_trace.length > 0 && (
+                  <span className="ml-2 text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 border border-orange-200 uppercase tracking-wide">
+                    Live Attack
+                  </span>
+                )}
+              </p>
               <ul className="space-y-3">
                 {active.findings.map((f, i) => {
                   const isAudit = f.includes('[RISK]') && f.includes('[EVIDENCE]');
@@ -336,6 +567,9 @@ const ExpertAnalysis: FC<Props> = ({ evaluation }) => {
             </div>
           </div>
         </div>
+
+        {/* Attack Trail — only for Expert 1 in live mode */}
+        {active.id === 'security' && <AttackTrailPanel report={active} />}
       </div>
     </div>
   )

@@ -99,6 +99,15 @@ export function councilReportToDetailedEvaluation(report: CouncilReportResponse)
       findings: extractFindings(security),
       framework_refs: extractRefs(security),
       elapsed: Number(security.elapsed_seconds ?? 0),
+      // Live attack audit trail — only present when Expert 1 ran in live mode
+      attack_trace:    Array.isArray(security.attack_trace)    ? security.attack_trace    : undefined,
+      probe_trace:     Array.isArray(security.probe_trace)     ? security.probe_trace     : undefined,
+      boundary_trace:  Array.isArray(security.boundary_trace)  ? security.boundary_trace  : undefined,
+      breach_details:  Array.isArray(security.breach_details)  ? security.breach_details  : undefined,
+      phase_highlights: security.phase_highlights ?? undefined,
+      standard_suite:  Array.isArray(security.standard_suite_results?.all_results)
+                         ? security.standard_suite_results.all_results
+                         : undefined,
     },
     {
       id: 'governance',

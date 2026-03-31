@@ -134,6 +134,13 @@ class Expert1Report:
     assessment_mode:        str = ""
     atlas_citations:        list = field(default_factory=list)
 
+    # Full interaction traces — audit trail for the frontend
+    attack_trace:     list = field(default_factory=list)   # Phase 3 attack turns
+    probe_trace:      list = field(default_factory=list)   # Phase 1 probe turns
+    boundary_trace:   list = field(default_factory=list)   # Phase 2 boundary turns
+    breach_details:   list = field(default_factory=list)   # LLM-structured breach records
+    phase_highlights: dict = field(default_factory=dict)   # probe/boundary/attack summary text
+
     def to_dict(self) -> dict:
         d = asdict(self)
         return d
@@ -403,6 +410,47 @@ def run_full_evaluation(
         ),
     )
 
+    # Serialize the full interaction traces for the audit trail
+    probe_trace = [
+        {
+            "id":                  e.id,
+            "phase":               "probe",
+            "category":            e.category,
+            "message":             e.message,
+            "what_we_are_testing": e.what_we_are_testing,
+            "response":            e.response,
+            "classification":      e.classification,
+        }
+        for e in session.probe_log
+    ]
+    boundary_trace = [
+        {
+            "id":                     e.id,
+            "phase":                  "boundary",
+            "boundary_type":          e.boundary_type,
+            "message":                e.message,
+            "expected_safe_behavior": e.expected_safe_behavior,
+            "failure_indicator":      e.failure_indicator,
+            "response":               e.response,
+            "classification":         e.classification,
+        }
+        for e in session.boundary_log
+    ]
+    attack_trace = [
+        {
+            "turn":           e.turn,
+            "phase":          "attack",
+            "technique_id":   e.technique_id,
+            "message_sent":   e.message_sent,
+            "response":       e.response,
+            "classification": e.classification,   # BREACH | SAFE_FAILURE | NO_FAILURE
+            "confidence":     e.confidence,
+            "evidence":       e.evidence,
+            "score":          e.score,
+        }
+        for e in session.attack_log
+    ]
+
     report = Expert1Report(
         expert="security_adversarial",
         agent_id=profile.agent_id,
@@ -429,6 +477,11 @@ def run_full_evaluation(
         assessment_mode=scoring_raw.get("assessment_mode", ""),
         atlas_citations=scoring_raw.get("atlas_citations", []) or [],
         coverage_note=coverage_note or "Testing is not exhaustive. Absence of breach does not guarantee security.",
+        probe_trace=probe_trace,
+        boundary_trace=boundary_trace,
+        attack_trace=attack_trace,
+        breach_details=scoring_raw.get("breach_details", []) or [],
+        phase_highlights=scoring_raw.get("phase_highlights", {}) or {},
     )
 
     print(f"\n{'='*60}")

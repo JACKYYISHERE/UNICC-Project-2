@@ -507,8 +507,9 @@ class Expert1Router:
         print("  [SCORING]")
         system   = get_scoring_system_prompt(profile.description)
         user_log = self._format_session_for_scoring(session)
+        # 4096 tokens to accommodate breach_details + structured key_findings
         try:
-            result = self._llm.generate_json(system, user_log, max_tokens=2048)
+            result = self._llm.generate_json(system, user_log, max_tokens=4096)
         except Exception as e:
             print(f"    ERROR in scoring LLM: {e}")
             result = self._fallback_score()

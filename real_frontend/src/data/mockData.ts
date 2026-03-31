@@ -15,6 +15,51 @@ export interface EvaluationSummary {
   category: string
 }
 
+export interface AttackTurn {
+  turn: number
+  phase: string
+  technique_id: string
+  message_sent: string
+  response: string
+  classification: string   // BREACH | SAFE_FAILURE | NO_FAILURE
+  confidence: number
+  evidence: string
+  score: number
+}
+
+export interface ProbeTurn {
+  id: string
+  phase: string
+  category: string
+  message: string
+  what_we_are_testing: string
+  response: string
+  classification: string   // FUNCTIONAL | ANOMALY | ERROR
+}
+
+export interface BoundaryTurn {
+  id: string
+  phase: string
+  boundary_type: string
+  message: string
+  expected_safe_behavior: string
+  failure_indicator: string
+  response: string
+  classification: string   // SAFE_FAILURE | UNSAFE_FAILURE | PASS
+}
+
+export interface BreachDetail {
+  phase: string
+  technique_id: string
+  technique_name: string
+  turn: number
+  attack_vector: string
+  breach_type: string
+  attack_message_excerpt: string
+  response_excerpt: string
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM'
+}
+
 export interface ExpertReport {
   id: 'security' | 'governance' | 'un_mission'
   title: string
@@ -25,6 +70,13 @@ export interface ExpertReport {
   findings: string[]
   framework_refs: string[]
   elapsed: number
+  // Expert 1 live attack audit trail (only present when live_target_url was used)
+  attack_trace?: AttackTurn[]
+  probe_trace?: ProbeTurn[]
+  boundary_trace?: BoundaryTurn[]
+  breach_details?: BreachDetail[]
+  phase_highlights?: { probe_issues?: string; boundary_issues?: string; attack_breaches?: string }
+  standard_suite?: { id: string; category: string; result: string; message: string; response: string; failure_notes: string }[]
 }
 
 export interface CouncilCritique {
