@@ -90,9 +90,26 @@ export async function submitExpert1Attack(
   return res.json()
 }
 
+export interface CouncilSubmitResponse {
+  incident_id: string
+  status: 'running'
+  message: string
+  poll_url: string
+  result_url: string
+}
+
+export interface EvaluationStatusResponse {
+  incident_id: string
+  status: 'running' | 'complete' | 'failed' | 'unknown'
+  elapsed_seconds: number | null
+  error: string | null
+  result_url: string | null
+}
+
+/** Fire-and-forget: POST returns immediately with incident_id. */
 export async function submitCouncilEvaluation(
   body: CouncilEvaluateRequest
-): Promise<CouncilReportResponse> {
+): Promise<CouncilSubmitResponse> {
   const res = await fetch(`${BASE_URL}/evaluate/council`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -103,6 +120,52 @@ export async function submitCouncilEvaluation(
     throw new Error(text)
   }
   return res.json()
+}
+
+/** Poll the background evaluation status. */
+export async function getEvaluationStatus(
+  incidentId: string
+): Promise<EvaluationStatusResponse> {
+  const res = await fetch(`${BASE_URL}/evaluations/${incidentId}/status`)
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+/**
+ * Submit + poll until complete, then return the full report.
+ * Calls onProgress(elapsed_seconds) every 5 s while running.
+ * Throws if evaluation fails or exceeds maxWaitMs (default 15 min).
+ */
+export async function submitAndWait(
+  body: CouncilEvaluateRequest,
+  onProgress?: (elapsed: number) => void,
+  maxWaitMs = 15 * 60 * 1000,
+): Promise<CouncilReportResponse> {
+  const submit = await submitCouncilEvaluation(body)
+  const incidentId = submit.incident_id
+  const deadline = Date.now() + maxWaitMs
+
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 5000))
+    const status = await getEvaluationStatus(incidentId)
+    if (onProgress && status.elapsed_seconds != null) {
+      onProgress(status.elapsed_seconds)
+    }
+    if (status.status === 'complete') {
+      return getEvaluationByIncident(incidentId)
+    }
+    if (status.status === 'failed') {
+      throw new Error(status.error ?? 'Evaluation failed on the server')
+    }
+  }
+  // Deadline exceeded — try /evaluations/latest as fallback
+  try {
+    return await fetch(
+      `${BASE_URL}/evaluations/latest?agent_id=${encodeURIComponent(body.agent_id)}`
+    ).then(r => r.json())
+  } catch {
+    throw new Error(`Evaluation timed out after ${maxWaitMs / 60000} minutes`)
+  }
 }
 
 export async function listEvaluations(limit = 20, offset = 0): Promise<EvaluationListItem[]> {

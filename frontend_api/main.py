@@ -8,7 +8,8 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+import threading as _threading
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel, Field
@@ -40,6 +41,14 @@ DB_PATH = COUNCIL_DIR / "council.db"
 REPORTS_DIR = COUNCIL_DIR / "reports"
 INDEX_PATH = COUNCIL_DIR / "knowledge_index.jsonl"
 EXPERT1_DIR = BASE_DIR / "Expert1"
+
+
+# ── In-memory evaluation status store ────────────────────────────────────────
+# Maps incident_id → {"status": "running"|"complete"|"failed",
+#                      "started_at": float, "elapsed_seconds": float,
+#                      "error": str|None}
+_eval_status: dict[str, dict] = {}
+_eval_status_lock = _threading.Lock()
 
 
 def _resolve_backend(requested: str, vllm_base_url: str = "http://localhost:8000") -> str:
@@ -753,28 +762,21 @@ def evaluate_expert1_attack(request: Expert1AttackRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/evaluate/council")
-def evaluate_council(request: CouncilEvaluateRequest) -> dict:
-    session_id = str(uuid.uuid4())
-    audit_log_event(
-        stage="request_received",
-        status="success",
-        actor="frontend_api",
-        message="Council evaluation API request accepted",
-        payload={
-            "backend": request.backend,
-            "description_length": len(request.system_description or ""),
-        },
-        source="frontend_api",
-        session_id=session_id,
-        agent_id=request.agent_id,
-    )
-    effective_backend = _resolve_backend(request.backend, request.vllm_base_url)
+def _run_council_evaluation(
+    request: "CouncilEvaluateRequest",
+    incident_id: str,
+    session_id: str,
+    effective_backend: str,
+) -> None:
+    """Background worker: run the full council evaluation and update status store."""
+    import time as _time
+    started = _time.time()
     try:
         from council.agent_submission import AgentSubmission
         from council.council_orchestrator import CouncilOrchestrator
 
         submission = AgentSubmission(
+            incident_id=incident_id,
             agent_id=request.agent_id,
             system_description=request.system_description,
             system_name=request.system_name,
@@ -792,20 +794,34 @@ def evaluate_council(request: CouncilEvaluateRequest) -> dict:
             vllm_model=request.vllm_model,
         )
         report = orch.evaluate(submission)
-        response = _ensure_serializable(report.to_dict())
+        elapsed = _time.time() - started
+        with _eval_status_lock:
+            _eval_status[incident_id] = {
+                "status": "complete",
+                "started_at": started,
+                "elapsed_seconds": round(elapsed, 1),
+                "error": None,
+            }
         audit_log_event(
             stage="response_sent",
             status="success",
             actor="frontend_api",
-            message="Council evaluation response sent",
-            payload={"incident_id": response.get("incident_id")},
+            message="Council evaluation complete",
+            payload={"incident_id": incident_id, "elapsed_seconds": round(elapsed, 1)},
             source="frontend_api",
             session_id=session_id,
-            incident_id=response.get("incident_id"),
+            incident_id=incident_id,
             agent_id=request.agent_id,
         )
-        return response
     except Exception as e:
+        elapsed = _time.time() - started
+        with _eval_status_lock:
+            _eval_status[incident_id] = {
+                "status": "failed",
+                "started_at": started,
+                "elapsed_seconds": round(elapsed, 1),
+                "error": str(e),
+            }
         audit_log_event(
             stage="evaluation_failed",
             status="error",
@@ -817,7 +833,65 @@ def evaluate_council(request: CouncilEvaluateRequest) -> dict:
             session_id=session_id,
             agent_id=request.agent_id,
         )
-        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/evaluate/council")
+def evaluate_council(
+    request: CouncilEvaluateRequest,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """
+    Submit a council evaluation.  Returns immediately with an incident_id.
+    The evaluation runs in the background; poll /evaluations/{incident_id}/status
+    to track progress, and /evaluations/{incident_id} (or /evaluations/latest)
+    to retrieve the full report once complete.
+    """
+    import time as _time
+    session_id = str(uuid.uuid4())
+
+    # Pre-generate a stable incident_id so the client can start polling immediately.
+    ts = _time.strftime("%Y%m%d")
+    slug = (request.agent_id or "unknown").lower()[:24].replace(" ", "-")
+    suffix = str(uuid.uuid4())[:6]
+    incident_id = f"inc_{ts}_{slug}_{suffix}"
+
+    audit_log_event(
+        stage="request_received",
+        status="success",
+        actor="frontend_api",
+        message="Council evaluation accepted — running in background",
+        payload={
+            "incident_id": incident_id,
+            "backend": request.backend,
+            "description_length": len(request.system_description or ""),
+        },
+        source="frontend_api",
+        session_id=session_id,
+        agent_id=request.agent_id,
+    )
+
+    effective_backend = _resolve_backend(request.backend, request.vllm_base_url)
+
+    # Register as "running" before spawning so /status is immediately useful.
+    with _eval_status_lock:
+        _eval_status[incident_id] = {
+            "status": "running",
+            "started_at": _time.time(),
+            "elapsed_seconds": 0,
+            "error": None,
+        }
+
+    background_tasks.add_task(
+        _run_council_evaluation, request, incident_id, session_id, effective_backend
+    )
+
+    return {
+        "incident_id": incident_id,
+        "status": "running",
+        "message": "Evaluation started. Poll /evaluations/{incident_id}/status for progress.",
+        "poll_url": f"/evaluations/{incident_id}/status",
+        "result_url": f"/evaluations/{incident_id}",
+    }
 
 
 @app.get("/evaluations")
@@ -868,6 +942,39 @@ def get_latest_evaluation(agent_id: str = Query(default="")) -> dict:
         except Exception:
             continue
     raise HTTPException(status_code=404, detail="No matching report found")
+
+
+@app.get("/evaluations/{incident_id}/status")
+def get_evaluation_status(incident_id: str) -> dict:
+    """
+    Returns the live status of a background evaluation.
+    status: "running" | "complete" | "failed" | "unknown"
+    When complete, result_url points to the full report.
+    """
+    import time as _time
+    with _eval_status_lock:
+        info = _eval_status.get(incident_id)
+    if info is None:
+        # May have been started in a previous server process — check disk
+        p = REPORTS_DIR / f"{incident_id}.json"
+        if p.exists():
+            return {"incident_id": incident_id, "status": "complete",
+                    "elapsed_seconds": None, "error": None,
+                    "result_url": f"/evaluations/{incident_id}"}
+        return {"incident_id": incident_id, "status": "unknown",
+                "elapsed_seconds": None, "error": None}
+    elapsed = (
+        info["elapsed_seconds"]
+        if info["status"] != "running"
+        else round(_time.time() - info["started_at"], 1)
+    )
+    return {
+        "incident_id": incident_id,
+        "status": info["status"],
+        "elapsed_seconds": elapsed,
+        "error": info.get("error"),
+        "result_url": f"/evaluations/{incident_id}" if info["status"] == "complete" else None,
+    }
 
 
 @app.get("/evaluations/{incident_id}")

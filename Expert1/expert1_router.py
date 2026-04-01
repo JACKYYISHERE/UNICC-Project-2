@@ -204,7 +204,12 @@ class ClaudeBackend(LLMBackend):
 
     DEFAULT_MODEL = "claude-sonnet-4-6"
 
-    def __init__(self, model: str | None = None, sleep_between_calls: float = 1.0):
+    # Global semaphore: cap concurrent Claude calls from this process to 3.
+    # Petri's real server also calls Claude internally, so keeping this low
+    # avoids cascading 529 Overloaded errors.
+    _semaphore = threading.Semaphore(3)
+
+    def __init__(self, model: str | None = None, sleep_between_calls: float = 0.5):
         try:
             import anthropic
         except ImportError:
@@ -217,15 +222,30 @@ class ClaudeBackend(LLMBackend):
         self._sleep  = sleep_between_calls
 
     def generate(self, system: str, user: str, max_tokens: int = 1024) -> str:
+        import anthropic as _anthropic
         if self._sleep > 0:
             time.sleep(self._sleep)
-        response = self._client.messages.create(
-            model=self._model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return response.content[0].text
+        # Retry with exponential backoff on 529 Overloaded
+        max_retries = 4
+        backoff = 5.0  # seconds; doubles each retry
+        with ClaudeBackend._semaphore:
+            for attempt in range(max_retries):
+                try:
+                    response = self._client.messages.create(
+                        model=self._model,
+                        max_tokens=max_tokens,
+                        system=system,
+                        messages=[{"role": "user", "content": user}],
+                    )
+                    return response.content[0].text
+                except _anthropic.APIStatusError as e:
+                    if e.status_code == 529 and attempt < max_retries - 1:
+                        wait = backoff * (2 ** attempt)
+                        print(f"  [ClaudeBackend] 529 Overloaded — retrying in {wait:.0f}s "
+                              f"(attempt {attempt + 1}/{max_retries})")
+                        time.sleep(wait)
+                    else:
+                        raise
 
 
 class VLLMBackend(LLMBackend):
@@ -472,7 +492,7 @@ class Expert1Router:
             classification = self._classify_probe(response)
             return msg_def, response, classification
 
-        max_workers = min(len(msg_defs), 4)
+        max_workers = min(len(msg_defs), 2)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             results = list(ex.map(_execute_probe, msg_defs))
 
@@ -524,7 +544,7 @@ class Expert1Router:
             )
             return msg_def, response, classification
 
-        max_workers = min(len(msg_defs), 4)
+        max_workers = min(len(msg_defs), 2)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             results = list(ex.map(_execute_boundary, msg_defs))
 
@@ -630,7 +650,7 @@ class Expert1Router:
             except Exception as e:
                 print(f"    ERROR in parallel technique {tech.id}: {e}")
 
-        max_workers = min(len(tasks), 3)
+        max_workers = min(len(tasks), 2)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
             futures = [ex.submit(_run_technique_safe, t) for t in tasks]
             for f in concurrent.futures.as_completed(futures):

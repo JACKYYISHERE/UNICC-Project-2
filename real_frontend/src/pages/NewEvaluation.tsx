@@ -1,6 +1,6 @@
 import { type FC, useState, useRef, useEffect } from 'react'
 import { hapticButton, hapticSelect } from '../utils/haptic'
-import { submitCouncilEvaluation, analyzeRepo, getRecentAudit, type CouncilReportResponse, type AuditEvent } from '../api/client'
+import { submitAndWait, analyzeRepo, getRecentAudit, type CouncilReportResponse, type AuditEvent } from '../api/client'
 import { parseAgentDoc } from '../utils/parseAgentDoc'
 
 interface Props {
@@ -125,7 +125,7 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
     setLoading(true)
     startPolling()
     try {
-      const payload: Parameters<typeof submitCouncilEvaluation>[0] = {
+      const payload: Parameters<typeof submitAndWait>[0] = {
         agent_id: form.agent_id,
         system_name: form.system_name || form.agent_id,
         system_description: [form.description, form.capabilities].filter(Boolean).join('\n\n'),
@@ -138,7 +138,8 @@ const NewEvaluation: FC<Props> = ({ onSubmit }) => {
         vllm_model: import.meta.env.VITE_VLLM_MODEL || 'meta-llama/Meta-Llama-3-70B-Instruct',
         live_target_url: form.live_target_url.trim() || undefined,
       }
-      const report = await submitCouncilEvaluation(payload)
+      // submitAndWait: POST returns immediately, then polls /status every 5 s
+      const report = await submitAndWait(payload)
       stopPolling()
       // Final poll to capture completion events
       try { setLiveLog(await getRecentAudit(30)) } catch { /* ignore */ }

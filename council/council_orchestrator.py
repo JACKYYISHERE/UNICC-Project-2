@@ -627,9 +627,13 @@ class CouncilOrchestrator:
             agent_id=submission.agent_id,
         )
 
-        council_note = self._build_council_note(decision, validation_issues)
+        council_note = self._build_council_note(
+            decision, validation_issues,
+            live_target_url=submission.live_target_url or "",
+        )
 
         report = CouncilReport(
+            incident_id      = submission.incident_id or "",  # pre-assigned by API; storage fills if empty
             agent_id         = submission.agent_id,
             system_name      = submission.system_name or submission.agent_id,
             system_description = submission.system_description,
@@ -683,6 +687,7 @@ class CouncilOrchestrator:
         self,
         decision:          CouncilDecision,
         validation_issues: list,
+        live_target_url:   str = "",
     ) -> str:
         """Generate the human reviewer summary note (template, not LLM)."""
         lines = [
@@ -713,6 +718,24 @@ class CouncilOrchestrator:
             "Disagreements represent different professional frameworks, not errors. "
             "Please consult the full expert_reports and critiques before making a final determination."
         )
+
+        # When Expert 1 ran in Live Attack mode, clarify the two distinct test dimensions.
+        if live_target_url:
+            lines.append(
+                "\nExpert 1 Live Attack — two distinct evaluation dimensions:"
+                "\n  Phase 0–3 (Security Testing): probes whether the target system can be"
+                " manipulated or bypassed by an external attacker. Breaches here indicate"
+                " exploitable architectural vulnerabilities (e.g. XML injection, authority"
+                " framing, prompt injection)."
+                "\n  Phase B (Accuracy / Compliance Testing): submits representative"
+                " multi-turn transcripts to the target's compliance judge and verifies"
+                " whether it correctly classifies harmful vs. safe AI behaviour. Failures"
+                " here indicate that the compliance judge produces false negatives"
+                " (misses violations) or false positives (over-triggers on refused requests)."
+                "\n  A system can pass Phase 0–3 (secure against external attack) while"
+                " still failing Phase B (inaccurate internal compliance assessment), and"
+                " vice versa. Both dimensions must be considered independently."
+            )
 
         return "\n".join(lines)
 

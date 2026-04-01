@@ -27,6 +27,7 @@ class AgentSubmission:
     system_name:        str = ""
     metadata:           dict = field(default_factory=dict)
     live_target_url:    str = ""   # non-empty → Expert 1 live attack mode
+    incident_id:        str = ""   # pre-assigned by API layer; if empty, storage generates one
 
     def to_expert1_profile(self) -> dict:
         """
