@@ -1,5 +1,6 @@
 import React, { useEffect, useState, type FC } from 'react'
 import { getEvaluationByIncident, type CouncilReportResponse } from '../api/client'
+import { buildHumanRationale, buildHumanConditions } from '../utils/mapCouncilReport'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -503,8 +504,9 @@ const ReportFullPage: FC<Props> = ({ incidentId, onBack }) => {
   const decision      = report.council_decision ?? {}
   const finalRec      = String(decision.final_recommendation ?? 'REVIEW')
   const consensus     = String(decision.consensus_level ?? '')
-  const rationale     = String(decision.rationale ?? report.council_note ?? '')
+  const rationale     = buildHumanRationale(decision, report.council_note)
   const disagreements: any[] = Array.isArray(decision.disagreements) ? decision.disagreements : []
+  const humanConditions = buildHumanConditions(disagreements)
   const critiques     = Object.values(report.critiques ?? {})
   const expertKeys    = ['security', 'governance', 'un_mission_fit']
 
@@ -625,29 +627,18 @@ const ReportFullPage: FC<Props> = ({ incidentId, onBack }) => {
           </section>
         )}
 
-        {/* ── Score disagreements ── */}
-        {disagreements.length > 0 && (
+        {/* ── Cross-framework disagreements ── */}
+        {humanConditions.length > 0 && (
           <section>
-            <SectionTitle>Score Disagreements</SectionTitle>
-            <div className="space-y-2">
-              {disagreements.map((d: any, i) => (
-                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
-                  <span className="shrink-0 w-5 h-5 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">!</span>
-                  <div>
-                    <p className="text-xs font-semibold text-amber-800 capitalize">
-                      {d.dimension} — {String(d.type ?? '').replace(/_/g, ' ')}
-                    </p>
-                    <p className="text-xs text-amber-700 leading-relaxed mt-0.5">{d.description}</p>
-                    {d.values && (
-                      <div className="flex gap-2 mt-1.5 flex-wrap">
-                        {Object.entries(d.values).map(([k, v]) => (
-                          <span key={k} className="text-[10px] text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded">
-                            {k.replace(/_/g, ' ')}: {String(v)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+            <SectionTitle>Cross-Framework Disagreements</SectionTitle>
+            <p className="text-sm text-gray-400 mb-3 -mt-1">
+              These reflect differences in evaluation methodology — not errors. Each expert assesses the same dimension through a different lens.
+            </p>
+            <div className="space-y-3">
+              {humanConditions.map((cond, i) => (
+                <div key={i} className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                  <span className="shrink-0 w-5 h-5 rounded-full bg-amber-400 text-white text-[10px] font-bold flex items-center justify-center mt-0.5">{i + 1}</span>
+                  <p className="text-sm text-amber-900 leading-relaxed">{cond}</p>
                 </div>
               ))}
             </div>
@@ -667,7 +658,11 @@ const ReportFullPage: FC<Props> = ({ incidentId, onBack }) => {
                 <span className="text-sm text-gray-500">{consensus} consensus among three experts</span>
               )}
             </div>
-            <pre className="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap font-sans">{rationale}</pre>
+            <div className="space-y-3">
+              {rationale.split('\n\n').filter(Boolean).map((para, i) => (
+                <p key={i} className="text-sm text-gray-700 leading-relaxed">{para}</p>
+              ))}
+            </div>
           </div>
         </section>
 

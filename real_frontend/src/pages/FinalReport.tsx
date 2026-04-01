@@ -438,14 +438,17 @@ const FinalReport: FC<Props> = ({ evaluation }) => {
           </div>
           {key_conditions.length > 0 && (
             <div className="px-6 py-5 border-t border-apple-gray-100">
-              <p className="section-label mb-2">
-                {decision === 'REJECT' ? 'Conditions for Re-submission' : 'Required Actions'}
+              <p className="section-label mb-1">
+                {decision === 'REJECT' ? 'Conditions for Re-submission' : 'Cross-Framework Disagreements'}
               </p>
-              <ol className="space-y-2">
+              <p className="text-[11px] text-apple-gray-400 mb-3">
+                These represent differences in evaluation methodology, not errors. Each is recorded for human reviewer attention.
+              </p>
+              <ol className="space-y-3">
                 {key_conditions.map((cond, i) => (
-                  <li key={i} className="flex gap-3 text-sm text-apple-gray-700">
-                    <span className="shrink-0 font-semibold">{i + 1}.</span>
-                    <span>{cond}</span>
+                  <li key={i} className="flex gap-3 rounded-apple bg-amber-50 border border-amber-100 px-4 py-3">
+                    <span className="shrink-0 font-bold text-amber-600 text-sm mt-0.5">{i + 1}.</span>
+                    <span className="text-sm text-apple-gray-700 leading-relaxed">{cond}</span>
                   </li>
                 ))}
               </ol>

@@ -82,6 +82,145 @@ const extractRefs = (r: any): string[] => {
   return []
 }
 
+// ── Human-readable rationale builder ─────────────────────────────────────────
+
+const expertFullName: Record<string, string> = {
+  security:      'Security Expert',
+  governance:    'Governance Expert',
+  un_mission_fit:'UN Mission Expert',
+}
+
+const dimensionLabel: Record<string, string> = {
+  privacy:     'Privacy',
+  bias:        'Bias & Fairness',
+  transparency:'Transparency',
+  harmfulness: 'Harmfulness',
+  deception:   'Deception',
+  legal:       'Legal Compliance',
+  societal:    'Societal Risk',
+}
+
+const dimensionExplainer: Record<string, { security: string; governance: string; un_mission_fit: string }> = {
+  privacy: {
+    security:      'adversarial testing of whether privacy controls can be bypassed technically',
+    governance:    'regulatory compliance with GDPR and data minimisation obligations',
+    un_mission_fit:'whether data practices meet humanitarian beneficiary protection standards',
+  },
+  bias: {
+    security:      'whether adversarial prompts can trigger discriminatory or skewed outputs',
+    governance:    'regulatory requirements for bias testing and fairness documentation',
+    un_mission_fit:'alignment with UN principles of non-discrimination and equal treatment',
+  },
+  transparency: {
+    security:      'whether the system exposes its reasoning to potential manipulation',
+    governance:    'transparency obligations under EU AI Act and GDPR Art. 22',
+    un_mission_fit:'whether affected individuals can understand how decisions are made',
+  },
+  harmfulness: {
+    security:      'how harmful the output could be if security controls are bypassed',
+    governance:    'compliance with prohibited-AI and high-risk-AI harm prevention rules',
+    un_mission_fit:'potential for physical, psychological, or societal harm to beneficiaries',
+  },
+}
+
+export function buildHumanRationale(decision: any, councilNote?: string): string {
+  const rec: string = String(decision.final_recommendation ?? 'REVIEW')
+  const consensus: string = String(decision.consensus_level ?? 'PARTIAL')
+  const humanOversight: boolean = Boolean(decision.human_oversight_required)
+  const blocksDeployment: boolean = Boolean(decision.compliance_blocks_deployment)
+  const agreements: string[] = Array.isArray(decision.agreements) ? decision.agreements : []
+  const disagreements: any[] = Array.isArray(decision.disagreements) ? decision.disagreements : []
+
+  const recSentence: Record<string, string> = {
+    APPROVE: 'The Council has reached a positive conclusion: this system is cleared for deployment, subject to the conditions noted below.',
+    REVIEW:  'The Council recommends further review before this system proceeds to deployment. This is not a rejection — it signals that specific concerns must be addressed and documented first.',
+    REJECT:  'The Council has determined that this system should not proceed to deployment in its current form. The findings below describe what must be resolved before re-submission.',
+  }
+
+  const consensusSentence: Record<string, string> = {
+    FULL:    `All three experts independently arrived at the same recommendation (${rec}), indicating strong cross-framework alignment on the overall risk level.`,
+    PARTIAL: `Two of the three experts agreed on the recommendation (${rec}); one expert's assessment was more conservative, and the most-conservative-wins principle was applied.`,
+    SPLIT:   `The three experts reached different conclusions. The final recommendation (${rec}) reflects the most cautious assessment — a deliberate design choice to avoid under-reporting risk in safety-critical contexts.`,
+    NONE:    `The three experts reached different conclusions. The final recommendation (${rec}) reflects the most cautious assessment.`,
+  }
+
+  const parts: string[] = []
+
+  parts.push(recSentence[rec] ?? recSentence['REVIEW'])
+  parts.push(consensusSentence[consensus] ?? consensusSentence['NONE'])
+
+  if (agreements.length > 0) {
+    const aLabels = agreements.map(a => dimensionLabel[a] ?? titleCase(a)).join(', ')
+    parts.push(`Area${agreements.length > 1 ? 's' : ''} of full cross-expert agreement: ${aLabels}. All three evaluation frameworks independently identified the same risk level here.`)
+  }
+
+  if (disagreements.length > 0) {
+    const dims = disagreements.map(d => dimensionLabel[d.dimension] ?? titleCase(d.dimension ?? '')).join(' and ')
+    parts.push(`Cross-framework differences were detected in ${dims}. These are not contradictions — they reflect that each expert applies a different lens (adversarial testing, regulatory compliance, humanitarian principles). The disagreements are recorded for human review rather than resolved automatically.`)
+  }
+
+  if (humanOversight) {
+    parts.push('At least one expert has flagged that human oversight is required before any deployment decision. This means a qualified human reviewer must sign off on this report.')
+  }
+
+  if (blocksDeployment) {
+    parts.push('At least one compliance-blocking issue has been identified. Deployment must not proceed until this is resolved.')
+  }
+
+  if (councilNote && councilNote.trim()) {
+    parts.push(councilNote.trim())
+  }
+
+  return parts.join('\n\n')
+}
+
+export function buildHumanConditions(disagreements: any[]): string[] {
+  return disagreements.map((d: any) => {
+    const dim: string = d.dimension ?? 'unknown'
+    const label = dimensionLabel[dim] ?? titleCase(dim)
+    const type: string = d.type ?? 'framework_difference'
+    const values: Record<string, number> = d.values ?? {}
+    const escalate: boolean = Boolean(d.escalate_to_human)
+
+    const scoreParts = Object.entries(values)
+      .map(([expert, score]) => `${expertFullName[expert] ?? expert}: ${score}/5`)
+      .join(', ')
+
+    const explainer = dimensionExplainer[dim]
+    let methodNote = ''
+    if (explainer) {
+      const expertNotes = Object.entries(values)
+        .map(([expert, score]) => {
+          const note = explainer[expert as keyof typeof explainer]
+          return note ? `The ${expertFullName[expert] ?? expert} (${note}) rated it ${score}/5` : null
+        })
+        .filter(Boolean)
+        .join('; ')
+      if (expertNotes) methodNote = ` ${expertNotes}.`
+    }
+
+    const typeNote: Record<string, string> = {
+      framework_difference:
+        'This is a framework difference — each expert evaluates this dimension through a different lens, so variation is expected and meaningful.',
+      test_pass_doc_fail:
+        'The system passed live adversarial testing, but documentation-based review found this dimension under-addressed — the implementation may be sound while the governance record is incomplete.',
+      test_fail_doc_pass:
+        'Live testing found a vulnerability that documentation-based review did not flag — the written policies appear adequate, but the actual implementation does not match them.',
+    }
+
+    const escalateNote = escalate
+      ? ' ⚠ This disagreement has been flagged for mandatory escalation to a human reviewer.'
+      : ''
+
+    return (
+      `${label} — ${titleCase(type.replace(/_/g, ' '))}: Scores were [${scoreParts}].` +
+      methodNote +
+      ` ${typeNote[type] ?? ''}` +
+      escalateNote
+    )
+  })
+}
+
 export function councilReportToDetailedEvaluation(report: CouncilReportResponse): DetailedEvaluation {
   const raw = report.expert_reports ?? {}
   const security = raw.security ?? {}
@@ -158,8 +297,8 @@ export function councilReportToDetailedEvaluation(report: CouncilReportResponse)
     consensus: toConsensus(decision.consensus_level),
     expert_reports: expertReports,
     council_critiques: critiques,
-    final_rationale: String(decision.rationale ?? report.council_note ?? ''),
-    key_conditions: disagreements.map((d: any) => String(d?.description ?? '')).filter(Boolean),
+    final_rationale: buildHumanRationale(decision, report.council_note),
+    key_conditions: buildHumanConditions(disagreements),
   }
 }
 
