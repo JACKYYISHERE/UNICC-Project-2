@@ -1,5 +1,5 @@
 import { type FC, useState, useCallback } from 'react'
-import { detailedEval, type DetailedEvaluation, type ExpertReport, type AttackTurn, type ProbeTurn, type BoundaryTurn, type BreachDetail } from '../data/mockData'
+import { detailedEval, type DetailedEvaluation, type ExpertReport, type AttackTurn, type ProbeTurn, type BoundaryTurn } from '../data/mockData'
 import { RecBadge } from '../components/Badge'
 import { hapticSelect } from '../utils/haptic'
 import { getEvaluationAudit, type AuditEvent, type AuditSpan } from '../api/client'
