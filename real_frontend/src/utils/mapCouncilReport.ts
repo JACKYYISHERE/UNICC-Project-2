@@ -70,6 +70,8 @@ const extractRefs = (r: any): string[] => {
   if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return r.framework_refs
   if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return r.regulatory_citations
   if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return r.evidence_references
+  // Expert 2 fallback: raw retrieved articles from ChromaDB (when Claude omits regulatory_citations)
+  if (Array.isArray(r?.retrieved_articles) && r.retrieved_articles.length) return r.retrieved_articles
   // Expert 3: UN principle violations used as references
   if (Array.isArray(r?.un_principle_violations) && r.un_principle_violations.length)
     return r.un_principle_violations

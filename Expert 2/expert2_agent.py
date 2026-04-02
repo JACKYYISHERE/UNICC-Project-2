@@ -521,6 +521,13 @@ class Expert2Agent:
                     final_assessment.get("key_gaps",
                         final_assessment.get("compliance_gaps", []))
                 )
+                # Ensure regulatory_citations is populated.
+                # Claude sometimes returns an empty list even when articles were retrieved.
+                # Fall back to the retrieved_articles list (ChromaDB section metadata).
+                if not final_assessment.get("regulatory_citations"):
+                    final_assessment["regulatory_citations"] = list(
+                        final_assessment.get("retrieved_articles", [])
+                    )
                 return final_assessment
 
         raise ValueError(f"Exceeded max search rounds ({MAX_SEARCH_ROUNDS}) without produce_assessment.")
