@@ -489,12 +489,6 @@ Copy `real_frontend/.env.example` → `real_frontend/.env.local` to get started.
 
 ---
 
-## Docs
-
-- [Full Technical Walkthrough（完整技术说明）](docs/system-technical-walkthrough.md)
-- [System Overview (English)](docs/system-overview.en.md)
-- [系统概览（中文）](docs/system-overview.zh-CN.md)
-
 ---
 
 ## License
