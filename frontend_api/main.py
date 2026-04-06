@@ -542,7 +542,7 @@ def evaluate_council(
     session_id = str(uuid.uuid4())
 
     # Pre-generate a stable incident_id so the client can start polling immediately.
-    ts = _time.strftime("%Y%m%d")
+    ts = time.strftime("%Y%m%d")
     slug = (request.agent_id or "unknown").lower()[:24].replace(" ", "-")
     suffix = str(uuid.uuid4())[:6]
     incident_id = f"inc_{ts}_{slug}_{suffix}"
