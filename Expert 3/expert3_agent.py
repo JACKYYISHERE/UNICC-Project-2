@@ -251,6 +251,20 @@ class UNPrinciplesRetriever:
     """ChromaDB retriever for UN/UNESCO principles knowledge base."""
 
     def __init__(self):
+        import subprocess, sys as _sys
+        db_path = Path(CHROMA_DIR)
+        if not db_path.exists() or not (db_path / "chroma.sqlite3").exists():
+            print("      [Expert 3] RAG index missing — rebuilding (first-time setup)…")
+            build_script = Path(__file__).parent / "expert3_rag" / "build_rag.py"
+            result = subprocess.run(
+                [_sys.executable, str(build_script)],
+                capture_output=True, text=True, timeout=180,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Expert 3 RAG build failed — run Expert 3/expert3_rag/build_rag.py manually.\n"
+                    f"Error: {result.stderr[:400]}"
+                )
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBED_MODEL
         )

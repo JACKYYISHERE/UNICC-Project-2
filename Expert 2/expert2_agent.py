@@ -297,6 +297,20 @@ TOOLS = [
 
 class RegulatoryRetriever:
     def __init__(self):
+        import subprocess, sys as _sys
+        db_path = Path(KNOWLEDGE_BASE)
+        if not db_path.exists() or not (db_path / "chroma.sqlite3").exists():
+            print("      [Expert 2] RAG index missing — rebuilding (first-time setup)…")
+            build_script = Path(__file__).parent / "build_rag_expert2.py"
+            result = subprocess.run(
+                [_sys.executable, str(build_script)],
+                capture_output=True, text=True, timeout=180,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Expert 2 RAG build failed — run Expert 2/build_rag_expert2.py manually.\n"
+                    f"Error: {result.stderr[:400]}"
+                )
         ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBED_MODEL
         )
