@@ -4,6 +4,7 @@
  * and Expert 1 live attack trail.
  */
 import type { DetailedEvaluation, ExpertReport } from '../data/mockData'
+import { citationToString } from './mapCouncilReport'
 
 // ── Parse a structured finding string into its tagged sections ────────────────
 function parseFinding(f: string): { risk: string; evidence: string; impact: string; score: string } | null {
@@ -224,7 +225,7 @@ export function evaluationToMarkdown(e: DetailedEvaluation): string {
     lines.push(`#### Regulatory / Framework References`)
     lines.push('')
     for (const ref of r.framework_refs) {
-      lines.push(`- § ${ref}`)
+      lines.push(`- § ${citationToString(ref)}`)
     }
     lines.push('')
 

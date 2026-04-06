@@ -66,21 +66,34 @@ const extractFindings = (r: any): string[] => {
   return ['No detailed findings returned.']
 }
 
+/** Normalise any citation item (string or rich object) to a display string. */
+export const citationToString = (c: any): string => {
+  if (typeof c === 'string') return c
+  if (!c || typeof c !== 'object') return String(c)
+  // Expert 2 rich object: { framework, article, relevance, excerpt }
+  if (c.article) {
+    const fw = c.framework ? `${c.framework} | ` : ''
+    const rel = c.relevance != null ? ` (relevance: ${c.relevance})` : ''
+    return `${fw}${c.article}${rel}`
+  }
+  // Expert 1 ATLAS object: { id, name, relevance }
+  if (c.id && c.name) return `${c.id} — ${c.name}${c.relevance != null ? ` (relevance: ${c.relevance})` : ''}`
+  // Generic fallback
+  return c.name ?? c.id ?? c.title ?? JSON.stringify(c)
+}
+
 const extractRefs = (r: any): string[] => {
-  if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return r.framework_refs
-  if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return r.regulatory_citations
-  if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return r.evidence_references
-  // Expert 2 fallback: raw retrieved articles from ChromaDB (when Claude omits regulatory_citations)
-  if (Array.isArray(r?.retrieved_articles) && r.retrieved_articles.length) return r.retrieved_articles
+  const normalise = (arr: any[]) => arr.map(citationToString)
+  if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return normalise(r.framework_refs)
+  if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return normalise(r.regulatory_citations)
+  if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return normalise(r.evidence_references)
+  // Expert 2 fallback: raw retrieved articles from ChromaDB
+  if (Array.isArray(r?.retrieved_articles) && r.retrieved_articles.length) return normalise(r.retrieved_articles)
   // Expert 3: UN principle violations used as references
   if (Array.isArray(r?.un_principle_violations) && r.un_principle_violations.length)
-    return r.un_principle_violations
-  // Expert 1: ATLAS technique citations (objects → readable strings)
-  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) {
-    return r.atlas_citations.map((c: any) =>
-      typeof c === 'string' ? c : `${c.id} — ${c.name} (relevance: ${c.relevance ?? 'N/A'})`
-    )
-  }
+    return normalise(r.un_principle_violations)
+  // Expert 1: ATLAS technique citations
+  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) return normalise(r.atlas_citations)
   return []
 }
 

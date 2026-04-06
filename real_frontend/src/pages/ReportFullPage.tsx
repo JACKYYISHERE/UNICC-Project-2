@@ -52,16 +52,23 @@ function extractFindings(r: any): string[] {
 }
 
 function extractRefs(r: any): string[] {
-  if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return r.framework_refs
-  if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return r.regulatory_citations
-  if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return r.evidence_references
+  const norm = (arr: any[]) => arr.map((c: any) => {
+    if (typeof c === 'string') return c
+    if (c?.article) {
+      const fw = c.framework ? `${c.framework} | ` : ''
+      const rel = c.relevance != null ? ` (relevance: ${c.relevance})` : ''
+      return `${fw}${c.article}${rel}`
+    }
+    if (c?.id && c?.name) return `${c.id} — ${c.name}${c.relevance != null ? ` (relevance: ${c.relevance})` : ''}`
+    return c?.name ?? c?.id ?? c?.title ?? JSON.stringify(c)
+  })
+  if (Array.isArray(r?.framework_refs) && r.framework_refs.length) return norm(r.framework_refs)
+  if (Array.isArray(r?.regulatory_citations) && r.regulatory_citations.length) return norm(r.regulatory_citations)
+  if (Array.isArray(r?.evidence_references) && r.evidence_references.length) return norm(r.evidence_references)
+  if (Array.isArray(r?.retrieved_articles) && r.retrieved_articles.length) return norm(r.retrieved_articles)
   if (Array.isArray(r?.un_principle_violations) && r.un_principle_violations.length)
-    return r.un_principle_violations
-  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) {
-    return r.atlas_citations.map((c: any) =>
-      typeof c === 'string' ? c : `${c.id} — ${c.name} (relevance: ${c.relevance ?? 'N/A'})`
-    )
-  }
+    return norm(r.un_principle_violations)
+  if (Array.isArray(r?.atlas_citations) && r.atlas_citations.length) return norm(r.atlas_citations)
   return []
 }
 
