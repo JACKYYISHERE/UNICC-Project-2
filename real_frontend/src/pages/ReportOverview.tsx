@@ -46,10 +46,10 @@ const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Repor
         )}
       </div>
 
-      {/* Expert 1 主动攻击 API 结果（仅当本次从「新建评估」提交后有返回时显示） */}
+      {/* Expert 1 live attack API results (only shown when submitted via New Evaluation) */}
       {expert1Report && (
         <div className="card p-6 border-2 border-apple-blue/20 bg-apple-blue-light/30">
-          <p className="section-label">Expert 1 主动攻击结果（API 实时返回）</p>
+          <p className="section-label">Expert 1 Live Attack Results (API)</p>
           <div className="flex flex-wrap items-center gap-3 mt-2">
             {expert1Report.recommendation != null && (
               <RecBadge rec={recMap(expert1Report.recommendation)} />
@@ -65,7 +65,7 @@ const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Repor
           </div>
           {Array.isArray(expert1Report.test_coverage?.attack_techniques_tested) && expert1Report.test_coverage!.attack_techniques_tested!.length > 0 && (
             <p className="text-xs text-apple-gray-600 mt-3">
-              已测试攻击技术: {expert1Report.test_coverage!.attack_techniques_tested!.length} 项
+              Attack techniques tested: {expert1Report.test_coverage!.attack_techniques_tested!.length}
             </p>
           )}
           {Array.isArray(expert1Report.key_findings) && expert1Report.key_findings!.length > 0 && (
