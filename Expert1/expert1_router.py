@@ -891,6 +891,35 @@ class Expert1Router:
 
         dimension_scores = {d: weighted_avg(d) for d in DIMS}
 
+        # ── Context-aware floor for governance dimensions ─────────────────────
+        # ATLAS is an attack framework; transparency/privacy/legal scores naturally
+        # bottom out at 1. Apply a floor based on known system properties if the
+        # description mentions concrete evidence of exposure in these dimensions.
+        desc_lower = profile.description.lower()
+
+        _floor_rules = [
+            # (dimension, keywords_any_of, floor_score, reason)
+            ("transparency",     ["no explainab", "no audit", "no log", "opaque", "no human review"],  2,
+             "system lacks documented explainability or audit trail"),
+            ("privacy",          ["openai", "third-party api", "external api", "no data retention",
+                                  "no anonymi", "no consent", "pii"],                                  2,
+             "system transmits user data to external APIs without documented safeguards"),
+            ("legal_compliance", ["no authentication", "no dpia", "no data protection",
+                                  "no lawful basis", "gdpr", "no processor agreement"],                2,
+             "system lacks documented legal/compliance controls"),
+        ]
+
+        floor_adjustments = {}
+        for dim, keywords, floor, reason in _floor_rules:
+            if dimension_scores[dim] < floor:
+                if any(kw in desc_lower for kw in keywords):
+                    floor_adjustments[dim] = (dimension_scores[dim], floor, reason)
+                    dimension_scores[dim] = floor
+
+        if floor_adjustments:
+            print(f"    [context floor] Applied to: "
+                  f"{', '.join(f'{d}: {old}->{new}' for d, (old, new, _) in floor_adjustments.items())}")
+
         # ── Risk tier from scores (same logic as Expert 3) ────────────────────
         max_score = max(dimension_scores.values())
         if max_score >= 5:

@@ -43,6 +43,14 @@ def report_to_markdown(r: dict) -> str:
             lines.append("- key_findings:")
             for f in key_findings[:10]:
                 lines.append(f"  - {f}")
+        compliance_findings = val.get("compliance_findings")
+        if compliance_findings and isinstance(compliance_findings, dict):
+            lines.append("- compliance_findings:")
+            for cf_key, cf_val in compliance_findings.items():
+                icon = {"PASS": "✓", "FAIL": "✗", "UNCLEAR": "?"}.get(
+                    str(cf_val).upper(), "·"
+                )
+                lines.append(f"  - {icon} {cf_key}: **{cf_val}**")
         lines.append("")
     lines.append("---")
     lines.append("")

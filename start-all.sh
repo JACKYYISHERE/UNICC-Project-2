@@ -29,6 +29,14 @@ if [ ! -d "$ROOT/real_frontend/node_modules" ]; then
   cd "$ROOT"
 fi
 
+# ── API Key check ─────────────────────────────────────────────────────────────
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "${MOCK_MODE:-0}" != "1" ]; then
+  echo "[start-all] ERROR: ANTHROPIC_API_KEY is not set."
+  echo "  Run:  export ANTHROPIC_API_KEY=sk-ant-..."
+  echo "  Or:   MOCK_MODE=1 bash start-all.sh   (skips LLM calls)"
+  exit 1
+fi
+
 # ── Ports ─────────────────────────────────────────────────────────────────────
 BACKEND_PORT=8100
 FRONTEND_PORT=5173
@@ -76,15 +84,13 @@ FRONTEND_PID=$!
 cd "$ROOT"
 
 echo ""
-echo "┌─────────────────────────────────────────────────────┐"
-echo "│  UNICC AI Safety Council is running                  │"
-echo "│                                                       │"
-echo "│  Backend  → http://localhost:$BACKEND_PORT             │"
-echo "│  Frontend → http://localhost:$FRONTEND_PORT            │"
-echo "│  API docs → http://localhost:$BACKEND_PORT/docs        │"
-echo "│                                                       │"
-echo "│  Press Ctrl+C to stop both servers                    │"
-echo "└─────────────────────────────────────────────────────┘"
+echo "  ✓ UNICC AI Safety Council is running"
+echo ""
+printf "    %-12s http://localhost:%s\n"      "Backend"  "$BACKEND_PORT"
+printf "    %-12s http://localhost:%s\n"      "Frontend" "$FRONTEND_PORT"
+printf "    %-12s http://localhost:%s/docs\n" "API docs" "$BACKEND_PORT"
+echo ""
+echo "  Press Ctrl+C to stop both servers."
 echo ""
 
 # ── Keep alive ───────────────────────────────────────────────────────────────
