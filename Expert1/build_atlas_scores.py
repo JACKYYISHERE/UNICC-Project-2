@@ -7,7 +7,6 @@ Scoring approach (no LLM needed — fully deterministic):
   1. Each ATLAS tactic maps to 1-2 primary dimensions + impact weight
   2. Technique maturity (demonstrated / emerging) multiplies severity
   3. Attack layer (model / application / social_engineering) adds secondary dims
-  4. Case studies add extra weight if humanitarian_risk == high
 
 Dimension scale: 1 (lowest risk) → 5 (highest risk), matching Expert 1 convention.
 """
@@ -87,13 +86,6 @@ def infer_layer(tactics: list[str]) -> str:
             return TACTIC_TO_LAYER[tid]
     return "mixed"
 
-# ── Humanitarian risk (case studies only) ─────────────────────────────────────
-HUMANITARIAN_BOOST = {
-    "high":   1.5,
-    "medium": 1.0,
-    "low":    0.7,
-}
-
 
 def base_scores() -> dict[str, float]:
     return {d: 1.0 for d in DIMS}
@@ -124,12 +116,8 @@ def score_technique(tech: dict, tactics: list[str] | None = None) -> dict:
 
 
 def score_case_study(cs: dict, technique_lookup: dict[str, dict]) -> dict:
-    """Aggregate technique scores + humanitarian boost."""
+    """Aggregate technique scores from all procedures in this case study."""
     scores = base_scores()
-
-    # Pull humanitarian_risk from tags in ChromaDB version, or from YAML directly
-    hum_risk = cs.get("humanitarian_risk", "medium")
-    hum_mult = HUMANITARIAN_BOOST.get(str(hum_risk).lower(), 1.0)
 
     # Aggregate all techniques used in this case study
     procedures = cs.get("procedure", [])
@@ -142,7 +130,7 @@ def score_case_study(cs: dict, technique_lookup: dict[str, dict]) -> dict:
     if tech_scores_list:
         for dim in DIMS:
             avg = sum(ts[dim] for ts in tech_scores_list) / len(tech_scores_list)
-            scores[dim] = avg * hum_mult
+            scores[dim] = avg
     else:
         # No techniques → conservative defaults
         for dim in DIMS:
