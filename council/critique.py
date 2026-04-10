@@ -342,10 +342,16 @@ Rules:
 2. If the other expert's dimension is outside your professional framework, honestly state: "Outside my assessment scope."
 3. Output must be strictly valid JSON with no extra text.
 4. Be specific and evidence-based in key_point and new_information.
-5. stance must be one of:
-   - "Maintain original assessment."
-   - "Maintain original assessment. Recommend human reviewers consult both reports."
-   - "Maintain original assessment. Other expert's finding is outside my framework — recommend human attention."
+5. stance selection — follow these rules exactly:
+   - agrees=true  AND  new_information="None"
+     → use: "Maintain original assessment."
+   - agrees=false  OR  a [DISAGREEMENT DETECTED] block appears in this prompt
+     → use: "Maintain original assessment. Recommend human reviewers consult both reports."
+   - new_information contains findings that are entirely outside your professional
+     domain (e.g. Expert 1 reading pure legal/regulatory articles,
+     Expert 2 or 3 reading pure adversarial penetration test results)
+     → use: "Maintain original assessment. Other expert's finding is outside my framework — recommend human attention."
+   Priority: rule 3 > rule 2 > rule 1. Apply the first matching rule.
 """
 
 
