@@ -408,7 +408,7 @@ def call_critique_llm(
             vllm_client = VLLMChatClient()
         response = vllm_client.messages.create(
             model      = vllm_client._model,
-            max_tokens = 1024,
+            max_tokens = 3000,
             system     = CRITIQUE_SYSTEM_PROMPT,
             messages   = [{"role": "user", "content": prompt}],
         )
@@ -437,7 +437,7 @@ def call_critique_llm(
 
     response = client.messages.create(
         model      = CLAUDE_MODEL,
-        max_tokens = 1000,
+        max_tokens = 3000,
         system     = CRITIQUE_SYSTEM_PROMPT,
         messages   = [{"role": "user", "content": prompt}],
     )

@@ -84,12 +84,12 @@ def _pick_live_adapter(url: str):
     Return the best-fit live adapter for the given target URL, or None if
     the target is unreachable.
 
-    Detection heuristic:
-      • GET /health → body contains "Petri"    → PetriAgentAdapter
-      • GET /health → body contains "dify"/"xenophobia" → XenophobiaToolAdapter
-      • GET /health fails, GET / succeeds → inspect root page:
-          - "VeriMedia" in body              → VeriMediaAdapter
-          - fallback                         → XenophobiaToolAdapter
+    Detection heuristic (checked in priority order):
+      • GET /health body contains "Petri"              → PetriAgentAdapter
+      • GET /health body contains "hume"/"expression"  → HumeExpressionAdapter
+      • GET /health body contains "dify"/"xenophobia"  → XenophobiaToolAdapter
+      • GET /health fails, GET / body contains "VeriMedia" → VeriMediaAdapter
+      • fallback                                       → XenophobiaToolAdapter
     """
     import requests as _requests
 
@@ -121,10 +121,21 @@ def _pick_live_adapter(url: str):
     if "Petri" in combined or "petri" in combined.lower():
         from adapters.petri_agent_adapter import PetriAgentAdapter
         candidate = PetriAgentAdapter(base_url=url)
+    elif (
+        "hume" in combined.lower()
+        or "expression-analysis" in combined.lower()
+        or "expression_analysis" in combined.lower()
+    ):
+        from adapters.hume_adapter import HumeExpressionAdapter
+        candidate = HumeExpressionAdapter(base_url=url)
     elif "VeriMedia" in combined or "verimedia" in combined.lower():
         from adapters.verimedia_adapter import VeriMediaAdapter
         candidate = VeriMediaAdapter(base_url=url)
+    elif "dify" in combined.lower() or "xenophobia" in combined.lower():
+        from adapters.xenophobia_adapter import XenophobiaToolAdapter
+        candidate = XenophobiaToolAdapter(base_url=url)
     else:
+        # Generic fallback — use XenophobiaToolAdapter (Dify-compatible format)
         from adapters.xenophobia_adapter import XenophobiaToolAdapter
         candidate = XenophobiaToolAdapter(base_url=url)
 
@@ -281,7 +292,7 @@ def _ensure_handoff_defaults(report: dict, expert_name: str) -> None:
         "note": f"{expert_name}: no cross-expert note provided.",
     }
     for field, default in defaults.items():
-        if field not in handoff:
+        if not handoff.get(field):
             handoff[field] = default
 
     # Coerce score fields to int in range 1-5
