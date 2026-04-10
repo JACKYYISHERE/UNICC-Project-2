@@ -49,7 +49,7 @@ HIGH_SEVERITY_DIMENSIONS = {
 }
 
 # Score gap threshold: differences >= this value are recorded as disagreements
-DISAGREEMENT_THRESHOLD = 1
+DISAGREEMENT_THRESHOLD = 3
 
 
 # ── Rule-based conversion ──────────────────────────────────────────────────────
@@ -343,7 +343,7 @@ Rules:
 3. Output must be strictly valid JSON with no extra text.
 4. Be specific and evidence-based in key_point and new_information.
 5. stance selection — follow these rules exactly:
-   - agrees=true  AND  new_information="None"
+   - agrees=true  AND  no [DISAGREEMENT DETECTED] block in this prompt
      → use: "Maintain original assessment."
    - agrees=false  OR  a [DISAGREEMENT DETECTED] block appears in this prompt
      → use: "Maintain original assessment. Recommend human reviewers consult both reports."
