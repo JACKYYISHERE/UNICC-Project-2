@@ -413,8 +413,9 @@ def call_critique_llm(
             messages   = [{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
-        raw = re.sub(r"^```(?:json)?\s*", "", raw)
-        raw = re.sub(r"\s*```$", "", raw)
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+        raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
+        raw = raw.replace("\n", " ").replace("\r", " ")
         try:
             return json.loads(raw)
         except json.JSONDecodeError:
@@ -444,9 +445,12 @@ def call_critique_llm(
 
     raw = response.content[0].text.strip()
 
-    # Strip markdown code fences if present
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
+    # Strip markdown code fences if present (re.MULTILINE so ^ matches line-start)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.MULTILINE)
+    raw = re.sub(r"\s*```$", "", raw, flags=re.MULTILINE)
+    # Collapse bare newlines inside the JSON string — literal newlines in
+    # field values are not valid JSON and cause JSONDecodeError.
+    raw = raw.replace("\n", " ").replace("\r", " ")
 
     try:
         return json.loads(raw)
