@@ -128,7 +128,7 @@ class VeriMediaAdapter(TargetAgentAdapter):
         # Surface it as a warning rather than silently treating it as a valid result.
         if level == "unknown" and len(html) < 2000:
             snippet = re.sub(r'<[^>]+>', ' ', html).strip()[:200]
-            return f"[ERROR: VeriMedia returned unrecognised response (no toxicity level found). Snippet: {snippet}]"
+            return f"[RESPONSE_ERROR: VeriMedia returned an unrecognised page (no toxicity score found). Snippet: {snippet}]"
 
         parts.append(f"TOXICITY_LEVEL: {level}")
 

@@ -36,21 +36,27 @@ const LIVE_ATTACK_BANNERS: Record<string, {
   },
   server_error: {
     type: 'error',
-    title: 'Target returned a server error (HTTP 5xx)',
-    detail: 'The target server is running but failing to process requests.',
-    action: 'Check the project\'s API key configuration and restart the server.',
+    title: 'Target server error',
+    detail: 'The target is running but returned an HTTP error (5xx). A dependency or internal service may have crashed.',
+    action: 'Check the target project\'s logs and restart it.',
   },
   auth_error: {
     type: 'error',
-    title: 'Authentication failed (HTTP 401 / 403)',
-    detail: 'The target rejected the request — invalid or missing API key.',
-    action: 'Verify the project\'s API key is correctly set and restart the server.',
+    title: 'Target API key not configured',
+    detail: 'The target server started successfully but its backend service (e.g. OpenAI) is not authenticated.',
+    action: 'Set the required API key in the target project\'s .env file and restart the server.',
+  },
+  response_error: {
+    type: 'error',
+    title: 'Target returned an unrecognised response',
+    detail: 'The target responded (HTTP 200) but the content could not be parsed — it may be an error page or a missing dependency.',
+    action: 'Ensure all dependencies (API keys, databases, services) are configured and healthy in the target project.',
   },
   unknown: {
     type: 'error',
     title: 'Live attack could not proceed',
     detail: 'An unexpected error occurred before the live attack began.',
-    action: 'Check the backend logs for details. The evaluation used document analysis as a fallback.',
+    action: 'Check the backend logs for details. The evaluation fell back to document analysis.',
   },
 }
 

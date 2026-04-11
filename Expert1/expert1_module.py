@@ -511,6 +511,7 @@ def run_full_evaluation(
                 _is_error = (
                     _smoke.startswith("[ERROR:")
                     or _smoke.startswith("[ADAPTER_ERROR:")
+                    or _smoke.startswith("[RESPONSE_ERROR:")
                     or _smoke.startswith("ERROR:")
                     or "[ADAPTER_ERROR:" in _smoke
                 )
@@ -522,6 +523,8 @@ def run_full_evaluation(
                         "api key", "openai", "not configured", "not set",
                     )):
                         _code = "auth_error"
+                    elif _smoke.startswith("[RESPONSE_ERROR:"):
+                        _code = "response_error"
                     raise LiveAttackError(
                         f"Target is running but returned a configuration error: {_smoke[:250].strip()}. "
                         f"Check the project's API key or server configuration.",
