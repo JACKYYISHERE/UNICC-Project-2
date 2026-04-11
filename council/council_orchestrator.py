@@ -135,9 +135,9 @@ def _pick_live_adapter(url: str):
         from adapters.xenophobia_adapter import XenophobiaToolAdapter
         candidate = XenophobiaToolAdapter(base_url=url)
     else:
-        # Generic fallback — use XenophobiaToolAdapter (Dify-compatible format)
-        from adapters.xenophobia_adapter import XenophobiaToolAdapter
-        candidate = XenophobiaToolAdapter(base_url=url)
+        # No recognised adapter signature — refuse to attack an unknown target.
+        # The caller will fall back to document analysis.
+        return None
 
     return candidate if candidate.is_available() else None
 
@@ -181,21 +181,30 @@ def run_expert1(
         else:
             llm = ClaudeBackend()
 
-        # Live Attack mode — pick adapter based on target URL
+        # Live Attack mode — only active when UNICC_LIVE_ATTACK_ENABLED=1 is set.
+        # Default off so cloning the repo never auto-attacks a live target.
         adapter = None
-        if live_target_url:
-            # Choose adapter by inspecting the health endpoint or URL hints.
-            # Default: try PetriAgentAdapter first (detects /health returning "Petri"),
-            # fall back to XenophobiaToolAdapter for all other Dify-style endpoints.
+        live_attack_enabled = os.environ.get("UNICC_LIVE_ATTACK_ENABLED", "0") == "1"
+        if live_target_url and live_attack_enabled:
             adapter = _pick_live_adapter(live_target_url)
             if adapter:
                 info = adapter.get_agent_info()
                 print(f"  [Expert 1] Live Attack mode → {info.get('name', live_target_url)}")
             else:
                 print(f"  [Expert 1] Live target unreachable at {live_target_url} — falling back to document analysis")
+        elif live_target_url and not live_attack_enabled:
+            print(f"  [Expert 1] live_target_url provided but UNICC_LIVE_ATTACK_ENABLED not set — document analysis only")
 
         report = run_full_evaluation(profile, adapter=adapter, llm=llm)
-        return report.to_dict()
+        result = report.to_dict()
+        if adapter is None:
+            result["analysis_mode"] = (
+                "document_analysis — Live adversarial testing is available when "
+                "UNICC_LIVE_ATTACK_ENABLED=1 and a running target URL is provided."
+            )
+        else:
+            result["analysis_mode"] = "live_attack"
+        return result
 
     except Exception as e:
         return _error_report("security", submission.agent_id, e)

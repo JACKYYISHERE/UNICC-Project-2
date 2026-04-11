@@ -139,8 +139,41 @@ class VeriMediaAdapter(TargetAgentAdapter):
         }
 
     def is_available(self) -> bool:
+        """
+        Smoke-test the live target by uploading a benign text file and checking
+        that VeriMedia returns a valid toxicity level (None/Mild/High/Max).
+        If the target has no OpenAI key or is misconfigured, the response will
+        be unparseable and this returns False → caller falls back to doc mode.
+        """
+        import tempfile, os as _os
+        tmp = None
         try:
-            r = self._session.get(self._base_url, timeout=5)
-            return r.status_code == 200
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".txt", delete=False, encoding="utf-8"
+            ) as f:
+                f.write("Hello, this is a test message.")
+                tmp = f.name
+
+            with open(tmp, "rb") as fh:
+                resp = requests.Session().post(
+                    f"{self._base_url}/upload",
+                    data={"file_type": "text"},
+                    files={"file": ("smoke_test.txt", fh, "text/plain")},
+                    timeout=15,
+                    allow_redirects=True,
+                )
+
+            if resp.status_code != 200:
+                return False
+
+            # Valid only if VeriMedia's classifier returned a recognised level
+            parsed = self._parse_response(resp.text)
+            return any(
+                f"TOXICITY_LEVEL: {lvl}" in parsed
+                for lvl in ("None", "Mild", "High", "Max")
+            )
         except Exception:
             return False
+        finally:
+            if tmp and _os.path.exists(tmp):
+                _os.unlink(tmp)
