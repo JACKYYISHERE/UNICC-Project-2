@@ -31,8 +31,8 @@ const LIVE_ATTACK_BANNERS: Record<string, {
   unreachable: {
     type: 'error',
     title: 'Project not running',
-    detail: 'The target URL was unreachable — connection refused or timed out.',
-    action: 'Start the target project server and re-submit to enable live attack testing.',
+    detail: 'The target URL was unreachable — connection refused, timed out, or missing API key.',
+    action: 'Start the target project server (with required API keys configured) and re-submit to enable live attack testing.',
   },
   server_error: {
     type: 'error',
