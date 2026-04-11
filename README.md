@@ -522,7 +522,7 @@ Capstone/
 | `VITE_VLLM_BASE_URL` | `http://127.0.0.1:8000` | vLLM server URL |
 | `VITE_VLLM_MODEL` | `meta-llama/Meta-Llama-3-70B-Instruct` | Model name for vLLM |
 
-Copy `real_frontend/.env.example` → `real_frontend/.env.local` to get started.
+Copy `Expert1/.env.example` → `Expert1/.env` and fill in your API key to get started.
 
 ---
 
