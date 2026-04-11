@@ -123,12 +123,16 @@ All phases produce a full **audit trail**: probe transcripts, boundary test resu
 - NIST findings → *alignment gap*; OWASP findings → *exposure / vulnerability*.
 - Every gap structured as `risk` → `evidence` → `impact` → `score_rationale`.
 
+> **Design note — input independence**: Expert 2 assesses the system exclusively from its natural-language description (`system_description`). It does not read source code or interact with the live system. This mirrors real-world regulatory review, where compliance assessors evaluate a system's stated purpose, data flows, and deployment context — not its implementation. Findings are therefore bounded by what the description discloses; gaps in the description are flagged as UNCLEAR rather than assumed compliant.
+
 ### Expert 3 — UN Mission Fit & Human Rights
 
 - RAG over UN Charter, UNDPP 2018, UNESCO AI Ethics, and humanitarian principles (humanity, neutrality, impartiality, independence).
 - Scores four risk dimensions on a 1–5 scale (1 = minimal risk, 5 = unacceptable): `technical_risk`, `ethical_risk`, `legal_risk`, `societal_risk`.
 - Any dimension ≥ 3 triggers mandatory human review.
 - Flags humanitarian-context violations: conflict zones, refugee data, vulnerable populations.
+
+> **Design note — input independence**: Expert 3 similarly assesses from the system description only, not from live system interaction or source code review. This is intentional: UN mission-fit and human rights evaluation is a policy-level judgment about a system's purpose and deployment context, not a technical audit of its runtime behaviour.
 
 ### Cross-Expert Critique Round
 
@@ -437,6 +441,25 @@ Base URL: `http://localhost:8100`
   "council_note": "..."
 }
 ```
+
+---
+
+## SLM Fine-Tuning (Optional / Reference)
+
+The repository includes training data for fine-tuning a smaller language model to perform the cross-expert critique task, as an alternative to using Claude for the critique round.
+
+```
+council/
+├── extract_critique_training_data.py   # Extracts critique samples from past evaluations
+├── *_training_data*.jsonl              # Collected critique training samples
+Expert 2/
+├── expert2_training_data_clean.jsonl
+└── expert2_training_data_supplementary.jsonl
+```
+
+Each `.jsonl` file follows the standard OpenAI fine-tuning format (`{"messages": [system, user, assistant]}`), where the assistant turn is the target structured critique JSON (`agrees`, `key_point`, `new_information`, `stance`, `evidence_references`).
+
+**These files are provided for reference only.** The system as shipped uses Claude for the critique round. The training data represents curated examples of high-quality cross-expert critiques collected during development and can be used to fine-tune a compatible open-source or OpenAI model if a self-hosted critique backend is desired.
 
 ---
 
