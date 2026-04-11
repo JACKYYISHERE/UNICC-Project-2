@@ -185,7 +185,16 @@ def run_expert1(
         # Default off so cloning the repo never auto-attacks a live target.
         adapter = None
         live_attack_enabled = os.environ.get("UNICC_LIVE_ATTACK_ENABLED", "0") == "1"
-        _scenario_a_error = ""  # target unreachable before adapter was even created
+        # ── Determine whether to attempt live attack ──────────────────────
+        # analysis_mode is one of three values surfaced to the frontend:
+        #   "live_attack"              — live attack completed successfully
+        #   "document_analysis_fallback" — URL given but attack could not run; reason in live_attack_error
+        #   "document_analysis"        — no URL given; silent document-only mode
+        adapter = None
+        live_attack_enabled = os.environ.get("UNICC_LIVE_ATTACK_ENABLED", "0") == "1"
+        _scenario_a_error      = ""
+        _scenario_a_error_code = ""
+
         if live_target_url and live_attack_enabled:
             adapter = _pick_live_adapter(live_target_url)
             if adapter:
@@ -194,29 +203,36 @@ def run_expert1(
             else:
                 _scenario_a_error = (
                     f"Target not running — could not connect to {live_target_url}. "
-                    f"Start the project and re-submit."
+                    f"Ensure the project server is started and accessible, then re-submit."
                 )
-                print(f"  [Expert 1] {_scenario_a_error} — falling back to document analysis")
+                _scenario_a_error_code = "unreachable"
+                print(f"  [Expert 1] {_scenario_a_error}")
+
         elif live_target_url and not live_attack_enabled:
+            _scenario_a_error = (
+                "Live attack testing is disabled on this server. "
+                "Set the environment variable UNICC_LIVE_ATTACK_ENABLED=1 and restart "
+                "the backend to enable adversarial probing."
+            )
+            _scenario_a_error_code = "disabled"
             print(f"  [Expert 1] live_target_url provided but UNICC_LIVE_ATTACK_ENABLED not set — document analysis only")
 
         report = run_full_evaluation(profile, adapter=adapter, llm=llm)
         result = report.to_dict()
 
-        # Propagate scenario-A error (unreachable before pre-flight) if not already set
+        # Merge scenario-A errors (connectivity failures before pre-flight)
         if _scenario_a_error and not result.get("live_attack_error"):
             result["live_attack_error"]      = _scenario_a_error
-            result["live_attack_error_code"] = "unreachable"
+            result["live_attack_error_code"] = _scenario_a_error_code
 
-        if adapter is None and not result.get("live_attack_error"):
-            result["analysis_mode"] = (
-                "document_analysis — Live adversarial testing is available when "
-                "UNICC_LIVE_ATTACK_ENABLED=1 and a running target URL is provided."
-            )
-        elif result.get("live_attack_error"):
+        # Set canonical analysis_mode
+        if result.get("live_attack_error"):
             result["analysis_mode"] = "document_analysis_fallback"
-        else:
+        elif adapter is not None:
             result["analysis_mode"] = "live_attack"
+        else:
+            result["analysis_mode"] = "document_analysis"
+
         return result
 
     except Exception as e:

@@ -21,22 +21,42 @@ interface Props {
   onViewFull?: () => void
 }
 
-const LIVE_ATTACK_ERROR_MESSAGES: Record<string, { title: string; detail: string }> = {
+// Maps live_attack_error_code → banner style + user-visible copy
+const LIVE_ATTACK_BANNERS: Record<string, {
+  type: 'error' | 'warning'
+  title: string
+  detail: string
+  action: string
+}> = {
   unreachable: {
+    type: 'error',
     title: 'Project not running',
-    detail: 'The target URL was unreachable. Start the project server and re-submit to enable live attack testing.',
+    detail: 'The target URL was unreachable — connection refused or timed out.',
+    action: 'Start the target project server and re-submit to enable live attack testing.',
   },
   server_error: {
-    title: 'Target server error (HTTP 5xx)',
-    detail: 'The target is running but returning server errors. Check the project\'s API key or service configuration.',
+    type: 'error',
+    title: 'Target returned a server error (HTTP 5xx)',
+    detail: 'The target server is running but failing to process requests.',
+    action: 'Check the project\'s API key configuration and restart the server.',
   },
   auth_error: {
-    title: 'Invalid or missing API key',
-    detail: 'The target returned HTTP 401/403. Verify the project\'s API key is correctly configured and restart the server.',
+    type: 'error',
+    title: 'Authentication failed (HTTP 401 / 403)',
+    detail: 'The target rejected the request — invalid or missing API key.',
+    action: 'Verify the project\'s API key is correctly set and restart the server.',
+  },
+  disabled: {
+    type: 'warning',
+    title: 'Live attack testing is disabled on this server',
+    detail: 'A target URL was provided but the live attack feature is turned off.',
+    action: 'Set UNICC_LIVE_ATTACK_ENABLED=1 and restart the backend to enable it.',
   },
   unknown: {
+    type: 'error',
     title: 'Live attack could not proceed',
-    detail: 'An unexpected error occurred before the live attack began. The evaluation fell back to document analysis.',
+    detail: 'An unexpected error occurred before the live attack began.',
+    action: 'Check the backend logs for details. The evaluation used document analysis as a fallback.',
   },
 }
 
@@ -65,46 +85,78 @@ const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Repor
         )}
       </div>
 
-      {/* Expert 1 live attack results (only shown after a live submission) */}
-      {expert1Report && (() => {
-        const errorCode = expert1Report.live_attack_error_code as string | undefined
-        const errorMsg  = expert1Report.live_attack_error  as string | undefined
-        const errInfo   = errorCode ? (LIVE_ATTACK_ERROR_MESSAGES[errorCode] ?? LIVE_ATTACK_ERROR_MESSAGES.unknown) : null
-        const isLive    = !errorCode && expert1Report.analysis_mode === 'live_attack'
+      {/* Expert 1 live attack section
+          analysis_mode values:
+            "live_attack"                → attack ran fully, show results
+            "document_analysis_fallback" → URL given but attack failed, show banner + doc results
+            "document_analysis"          → no URL given, silent doc mode, hide this section entirely */}
+      {expert1Report && expert1Report.analysis_mode !== 'document_analysis' && (() => {
+        const mode      = expert1Report.analysis_mode as string
+        const errorCode = (expert1Report.live_attack_error_code || '') as string
+        const errorMsg  = (expert1Report.live_attack_error  || '') as string
+        const banner    = errorCode ? (LIVE_ATTACK_BANNERS[errorCode] ?? LIVE_ATTACK_BANNERS.unknown) : null
+        const isLive    = mode === 'live_attack'
 
         return (
           <div className="space-y-3">
-            {/* ── Error banner (scenario A / B) ───────────────────────── */}
-            {errInfo && (
-              <div className="card p-4 border-2 border-apple-red/30 bg-red-50">
-                <div className="flex items-start gap-3">
-                  <span className="text-apple-red text-lg leading-none mt-0.5">⚠</span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-apple-red">{errInfo.title}</p>
-                    <p className="text-xs text-apple-gray-600 mt-0.5">{errInfo.detail}</p>
-                    {errorMsg && (
-                      <details className="mt-2">
-                        <summary className="text-[11px] text-apple-gray-400 cursor-pointer select-none">
-                          Technical details
-                        </summary>
-                        <p className="text-[11px] text-apple-gray-500 mt-1 font-mono break-all">
-                          {errorMsg.slice(0, 300)}{errorMsg.length > 300 ? '…' : ''}
-                        </p>
-                      </details>
-                    )}
-                    <p className="text-[11px] text-apple-gray-400 mt-2 italic">
-                      Live attack was skipped — results below are from document analysis.
-                    </p>
+
+            {/* ── Error / warning banner ───────────────────────────────── */}
+            {banner && (() => {
+              const isErr = banner.type === 'error'
+              return (
+                <div className={`card p-4 border-2 ${isErr
+                  ? 'border-red-300 bg-red-50'
+                  : 'border-amber-300 bg-amber-50'}`}>
+                  <div className="flex items-start gap-3">
+                    <span className={`text-lg leading-none mt-0.5 ${isErr ? 'text-red-500' : 'text-amber-500'}`}>
+                      {isErr ? '⚠' : 'ℹ'}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-semibold ${isErr ? 'text-red-700' : 'text-amber-700'}`}>
+                        {banner.title}
+                      </p>
+                      <p className="text-xs text-apple-gray-600 mt-0.5">{banner.detail}</p>
+                      <p className={`text-xs font-medium mt-1 ${isErr ? 'text-red-600' : 'text-amber-600'}`}>
+                        → {banner.action}
+                      </p>
+                      {errorMsg && (
+                        <details className="mt-2">
+                          <summary className="text-[11px] text-apple-gray-400 cursor-pointer select-none">
+                            Technical details
+                          </summary>
+                          <p className="text-[11px] text-apple-gray-500 mt-1 font-mono break-all whitespace-pre-wrap">
+                            {errorMsg.slice(0, 400)}{errorMsg.length > 400 ? '…' : ''}
+                          </p>
+                        </details>
+                      )}
+                      <p className="text-[11px] text-apple-gray-400 mt-2 italic">
+                        Live attack was skipped — security results below are from document analysis only.
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
 
-            {/* ── Normal results card ──────────────────────────────────── */}
-            <div className={`card p-6 border-2 ${isLive ? 'border-apple-blue/20 bg-apple-blue-light/30' : 'border-apple-gray-100'}`}>
-              <p className="section-label">
-                Expert 1 {isLive ? 'Live Attack Results (API)' : 'Security Assessment (API)'}
-              </p>
+            {/* ── Results card ─────────────────────────────────────────── */}
+            <div className={`card p-6 border-2 ${isLive
+              ? 'border-apple-blue/20 bg-apple-blue-light/30'
+              : 'border-apple-gray-100'}`}>
+              <div className="flex items-center gap-2 mb-2">
+                <p className="section-label mb-0">
+                  {isLive ? 'Expert 1 — Live Attack Results' : 'Expert 1 — Security Assessment'}
+                </p>
+                {!isLive && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-apple-gray-100 text-apple-gray-500 uppercase tracking-wide">
+                    Doc mode
+                  </span>
+                )}
+                {isLive && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-apple-blue/10 text-apple-blue uppercase tracking-wide">
+                    Live
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center gap-3 mt-2">
                 {expert1Report.recommendation != null && (
                   <RecBadge rec={recMap(expert1Report.recommendation)} />
@@ -115,10 +167,13 @@ const ReportOverview: FC<Props> = ({ eval: ev, currentStep, onStep, expert1Repor
                   </span>
                 )}
                 {expert1Report.session_id != null && (
-                  <span className="text-[11px] text-apple-gray-400">Session: {String(expert1Report.session_id).slice(0, 20)}…</span>
+                  <span className="text-[11px] text-apple-gray-400">
+                    Session: {String(expert1Report.session_id).slice(0, 20)}…
+                  </span>
                 )}
               </div>
-              {isLive && Array.isArray(expert1Report.test_coverage?.attack_techniques_tested) && expert1Report.test_coverage!.attack_techniques_tested!.length > 0 && (
+              {isLive && Array.isArray(expert1Report.test_coverage?.attack_techniques_tested) &&
+                expert1Report.test_coverage!.attack_techniques_tested!.length > 0 && (
                 <p className="text-xs text-apple-gray-600 mt-3">
                   Attack techniques tested: {expert1Report.test_coverage!.attack_techniques_tested!.length}
                 </p>
