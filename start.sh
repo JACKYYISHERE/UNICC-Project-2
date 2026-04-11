@@ -91,5 +91,7 @@ for cfg in configs:
 PYEOF
 
 echo "[start] Starting UNICC Council backend on port 8100..."
+# Load API keys from Expert1/.env if present
+[ -f "$ROOT/Expert1/.env" ] && source "$ROOT/Expert1/.env"
 cd "$ROOT/frontend_api"
 exec uvicorn main:app --host 0.0.0.0 --port 8100
