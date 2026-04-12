@@ -257,7 +257,7 @@ def _is_metadata_chunk(header: str, body: str) -> bool:
     for p in page_only_patterns:
         if re.match(p, header.strip()):
             # body 里实质内容很少（主要是 "EN OJ L..." 之类页眉）
-            real_lines = [l for l in body.split("\n") if len(l.strip()) > 30]
+            real_lines = [line for line in body.split("\n") if len(line.strip()) > 30]
             if len(real_lines) < 3:
                 return True
     return False

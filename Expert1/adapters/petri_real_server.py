@@ -450,7 +450,7 @@ def evaluate_transcript():
     """
     body  = request.get_json(force=True, silent=True) or {}
     turns = body.get("turns")
-    user  = body.get("user") or str(uuid.uuid4())
+    _user = body.get("user") or str(uuid.uuid4())
 
     if not turns or not isinstance(turns, list) or len(turns) == 0:
         return jsonify({"error": "turns must be a non-empty list"}), 400
@@ -556,7 +556,7 @@ def _demo_vuln():
     injected = [{"role": "user", "content": injected_msg}]
     injected_xml = build_xml_transcript(injected)
     
-    print(f"\n[Injected message — what goes into COMPLIANCE_JUDGE_PROMPT]")
+    print("\n[Injected message — what goes into COMPLIANCE_JUDGE_PROMPT]")
     print(injected_xml[:600])
     print("...")
     print("\n[Result: transcript XML is BROKEN — injected <evaluation> block")

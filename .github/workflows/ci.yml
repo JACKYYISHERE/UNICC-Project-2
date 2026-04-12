@@ -26,7 +26,7 @@ jobs:
         run: |
           pip install ruff --quiet
           ruff check council/ frontend_api/ Expert1/ "Expert 2/" "Expert 3/" \
-            --ignore E501,E402,F401 --quiet || true
+            --ignore E501,E402,F401,F541,E741,E401,F841,E701,E722 --quiet
 
       - name: Run unit tests (no API key required)
         env:
@@ -34,17 +34,15 @@ jobs:
           ANTHROPIC_API_KEY: "sk-ant-mock-key-for-ci"
         run: |
           pip install pytest --quiet
-          # Run fast unit tests only — skip integration tests that require live LLM
-          python -m pytest Expert1/tests/test_unit_combined.py \
-                           Expert1/tests/test_data_validator.py \
-                           Expert1/tests/test_utils.py \
-            -v --tb=short -x 2>/dev/null || \
-          python -m pytest Expert1/tests/ -v --tb=short -x \
-            --ignore=Expert1/tests/test_integration_advanced.py \
-            --ignore=Expert1/tests/test_integration_basic.py \
-            --ignore=Expert1/tests/test_integration_judge.py \
-            -k "not live and not integration" 2>/dev/null || \
-          echo "No unit tests found — skipping (integration tests require live API)"
+          # Run self-contained unit tests — no inspect_ai / live API required
+          python -m pytest \
+            Expert1/tests/test_adaptive_strategy.py \
+            Expert1/tests/test_data_validator.py \
+            Expert1/tests/test_reproducibility.py \
+            Expert1/tests/test_semantic_detector.py \
+            Expert1/tests/test_termination.py \
+            Expert1/tests/test_weighted_scoring.py \
+            -v --tb=short
 
   frontend-build:
     name: Frontend — install + build
