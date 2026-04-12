@@ -237,6 +237,41 @@ def run_expert2(
     backend="vllm"   → single-shot SLM inference (run_expert2_slm)
     """
     try:
+        if backend == "mock":
+            return {
+                "expert": "governance",
+                "agent_id": submission.agent_id,
+                "recommendation": "REVIEW",
+                "overall_compliance": "PARTIAL",
+                "compliance_findings": [
+                    {
+                        "standard": "UNESCO AI Ethics",
+                        "status": "PARTIAL",
+                        "detail": "[DEMO MODE] Human oversight mechanism described but not technically enforced.",
+                    },
+                    {
+                        "standard": "EU AI Act (High-Risk)",
+                        "status": "GAP",
+                        "detail": "[DEMO MODE] No conformity assessment documentation found for high-risk use category.",
+                    },
+                    {
+                        "standard": "UN Secretary-General AI Principles",
+                        "status": "PARTIAL",
+                        "detail": "[DEMO MODE] Accountability chain references human reviewer but lacks escalation procedure.",
+                    },
+                ],
+                "key_gaps": [
+                    "[DEMO MODE] Absence of formal risk register or documented mitigation controls.",
+                    "[DEMO MODE] No audit trail mechanism for AI-generated decisions.",
+                    "[DEMO MODE] Data governance policy not aligned with GDPR Article 22 (automated decisions).",
+                ],
+                "recommendation_rationale": "[DEMO MODE] Partial compliance with international AI governance standards; gaps in auditability and accountability must be addressed.",
+                "council_handoff": {
+                    "summary": "[DEMO MODE] Governance review found partial compliance. Key gaps in audit trails and formal risk documentation.",
+                    "flags": ["audit_trail_missing", "risk_register_absent"],
+                    "score_adjustment_hint": "moderate_deduction",
+                },
+            }
         if backend == "vllm" and vllm_client is not None:
             from .slm_experts import run_expert2_slm
             return run_expert2_slm(submission.system_description, vllm_client)
@@ -259,6 +294,31 @@ def run_expert3(
     backend="vllm"   → single-shot SLM inference (run_expert3_slm)
     """
     try:
+        if backend == "mock":
+            return {
+                "expert": "un_mission_fit",
+                "agent_id": submission.agent_id,
+                "recommendation": "REVIEW",
+                "dimension_scores": {
+                    "humanitarian_neutrality": 3,
+                    "cultural_sensitivity": 3,
+                    "field_operability": 2,
+                    "data_sovereignty": 3,
+                    "mission_alignment": 2,
+                },
+                "overall_risk_tier": "LIMITED",
+                "key_findings": [
+                    "[DEMO MODE] System does not demonstrate awareness of humanitarian neutrality obligations under IHL.",
+                    "[DEMO MODE] Cultural context handling is shallow — no multilingual edge-case evaluation documented.",
+                    "[DEMO MODE] Offline / low-bandwidth operation not addressed; limits field deployment viability.",
+                ],
+                "recommendation_rationale": "[DEMO MODE] System shows potential for UN mission support but requires adaptation for field conditions and humanitarian law compliance.",
+                "council_handoff": {
+                    "summary": "[DEMO MODE] UN mission-fit review identified moderate gaps in field operability and humanitarian neutrality alignment.",
+                    "flags": ["neutrality_gap", "offline_mode_absent"],
+                    "score_adjustment_hint": "moderate_deduction",
+                },
+            }
         if backend == "vllm" and vllm_client is not None:
             from .slm_experts import run_expert3_slm
             return run_expert3_slm(
