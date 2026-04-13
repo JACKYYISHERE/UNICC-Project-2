@@ -380,14 +380,9 @@ def report_to_pdf(r: dict) -> bytes:
                 score_rows = []
                 for k, v in dim_scores.items():
                     label = k.replace("_", " ").title()
-                    try:
-                        bar = "█" * int(v) + "░" * (5 - int(v))
-                        score_str = f"{bar}  {v}/5"
-                    except (TypeError, ValueError):
-                        score_str = str(v)
                     score_rows.append([
                         Paragraph(f"<b>{safe(label)}</b>", small_style),
-                        Paragraph(score_str, code_style),
+                        Paragraph(str(v), small_style),
                     ])
                 t = Table(
                     score_rows,
