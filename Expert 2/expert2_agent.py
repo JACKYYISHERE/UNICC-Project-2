@@ -80,10 +80,13 @@ OUTPUT REQUIREMENTS:
   - OWASP findings → use "exposure" or "vulnerability" in risk field
 
 - regulatory_citations: List every article you actually retrieved and used
-- council_handoff scores (1-5): Align with Expert 1's dimension scale
+- council_handoff scores (1-5): Align with Expert 1's dimension scale — YOU MUST ALWAYS SET THESE
   - privacy_score:       1=low GDPR risk, 5=critical PII/consent failure
   - transparency_score:  1=fully transparent, 5=no disclosure mechanism
   - bias_score:          1=equitable, 5=discriminatory output risk
+  - Scoring when UNCLEAR: treat as moderate-to-high risk — use 3 (unknown) to 4 (likely gap)
+  - Scoring when FAIL: use 4 or 5 depending on severity
+  - Scoring when PASS: use 1 or 2
 - assessment_basis: Always note if assessment is based on description only
 
 CRITICAL RULES:

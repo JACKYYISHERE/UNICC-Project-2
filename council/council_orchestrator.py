@@ -357,6 +357,30 @@ def _error_report(expert_key: str, agent_id: str, error: Exception) -> dict:
 
 # ── Validation ─────────────────────────────────────────────────────────────────
 
+def _derive_scores_from_findings(report: dict) -> dict:
+    """
+    Derive privacy/transparency/bias scores from compliance_findings when
+    the LLM did not populate council_handoff scores.
+
+    Mapping per dimension:  PASS → 2,  UNCLEAR → 3,  FAIL → 5
+    privacy_score      ← data_protection + data_governance  (average)
+    transparency_score ← transparency + automated_decision_making  (average)
+    bias_score         ← bias_fairness
+    """
+    _map = {"PASS": 2, "UNCLEAR": 3, "FAIL": 5}
+    findings: dict = report.get("compliance_findings", {})
+
+    def _avg(*keys: str) -> int:
+        vals = [_map.get(str(findings.get(k, "UNCLEAR")).upper(), 3) for k in keys]
+        return round(sum(vals) / len(vals))
+
+    return {
+        "privacy_score":      _avg("data_protection", "data_governance"),
+        "transparency_score": _avg("transparency", "automated_decision_making"),
+        "bias_score":         _avg("bias_fairness"),
+    }
+
+
 def _ensure_handoff_defaults(report: dict, expert_name: str) -> None:
     """
     Defensively fill any missing council_handoff fields with safe defaults
@@ -367,16 +391,20 @@ def _ensure_handoff_defaults(report: dict, expert_name: str) -> None:
         report["council_handoff"] = {}
 
     handoff = report["council_handoff"]
+
+    # Derive score defaults from compliance_findings (more meaningful than all-3)
+    derived = _derive_scores_from_findings(report)
     defaults = {
-        "privacy_score":               3,
-        "transparency_score":          3,
-        "bias_score":                  3,
+        "privacy_score":               derived["privacy_score"],
+        "transparency_score":          derived["transparency_score"],
+        "bias_score":                  derived["bias_score"],
         "human_oversight_required":    False,
         "compliance_blocks_deployment": False,
         "note": f"{expert_name}: no cross-expert note provided.",
     }
     for field, default in defaults.items():
-        if not handoff.get(field):
+        # Use `is None` check (not falsy) so LLM-provided 1 or False are preserved
+        if handoff.get(field) is None:
             handoff[field] = default
 
     # Coerce score fields to int in range 1-5
